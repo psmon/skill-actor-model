@@ -10,9 +10,9 @@ Kotlin + Apache Pekko Typed(1.1.x) 기반의 타입 안전한 액터 모델 코�
 
 ## 참고 문서
 
-- 상세 패턴 가이드: [skil-maker/docs/actor/02-kotlin-pekko-typed/README.md](../../../../skil-maker/docs/actor/02-kotlin-pekko-typed/README.md)
-- 액터모델 개요: [skil-maker/docs/actor/00-actor-model-overview.md](../../../../skil-maker/docs/actor/00-actor-model-overview.md)
-- 크로스 플랫폼 비교: [skil-maker/docs/actor/05-cross-platform-comparison.md](../../../../skil-maker/docs/actor/05-cross-platform-comparison.md)
+- 상세 패턴 가이드: [skill-maker/docs/actor/02-kotlin-pekko-typed/README.md](../../../../skill-maker/docs/actor/02-kotlin-pekko-typed/README.md)
+- 액터모델 개요: [skill-maker/docs/actor/00-actor-model-overview.md](../../../../skill-maker/docs/actor/00-actor-model-overview.md)
+- 크로스 플랫폼 비교: [skill-maker/docs/actor/05-cross-platform-comparison.md](../../../../skill-maker/docs/actor/05-cross-platform-comparison.md)
 
 ## 환경
 

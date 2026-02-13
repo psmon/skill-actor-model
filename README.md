@@ -79,7 +79,7 @@ skill-actor-model/
 │   ├── kotlin-pekko-typed/SKILL.md
 │   ├── dotnet-akka-net/SKILL.md
 │   └── actor-ai-agent/SKILL.md
-├── skil-maker/
+├── skill-maker/
 │   ├── docs/actor/                    # 플랫폼별 액터 패턴 참조 문서
 │   │   ├── 00-actor-model-overview.md
 │   │   ├── 01-java-akka-classic/

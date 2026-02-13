@@ -11,9 +11,9 @@ Memorizer v1 아키텍처를 참조 모델로 합니다.
 
 ## 참고 문서
 
-- AI Agent 가이드: [skil-maker/docs/actor/04-memorizer-ai-agent/README.md](../../../../skil-maker/docs/actor/04-memorizer-ai-agent/README.md)
-- Akka.NET 기본 패턴: [skil-maker/docs/actor/03-dotnet-akka-net/README.md](../../../../skil-maker/docs/actor/03-dotnet-akka-net/README.md)
-- 액터모델 개요: [skil-maker/docs/actor/00-actor-model-overview.md](../../../../skil-maker/docs/actor/00-actor-model-overview.md)
+- AI Agent 가이드: [skill-maker/docs/actor/04-memorizer-ai-agent/README.md](../../../../skill-maker/docs/actor/04-memorizer-ai-agent/README.md)
+- Akka.NET 기본 패턴: [skill-maker/docs/actor/03-dotnet-akka-net/README.md](../../../../skill-maker/docs/actor/03-dotnet-akka-net/README.md)
+- 액터모델 개요: [skill-maker/docs/actor/00-actor-model-overview.md](../../../../skill-maker/docs/actor/00-actor-model-overview.md)
 
 ## 환경
 
