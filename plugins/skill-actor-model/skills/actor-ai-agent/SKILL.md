@@ -266,6 +266,223 @@ protected override SupervisorStrategy SupervisorStrategy()
 }
 ```
 
+### 8. GraphSyncActor - DB 동기화 (PostgreSQL → Neo4j)
+
+PostgreSQL에 저장된 메모리 데이터를 Neo4j 그래프 데이터베이스로 전체 동기화합니다. `Self.Tell(SyncNextPage)` 페이지네이션으로 중단 가능한 배치 동기화를 구현합니다.
+
+```csharp
+public class GraphSyncActor : ReceiveActor
+{
+    private const int PageSize = 50;
+    private readonly IMemoryRepository _memoryRepository;
+    private readonly IGraphSyncService _graphSyncService;
+    private readonly IActorRef _graphRelationshipActor;
+
+    public GraphSyncActor(IMemoryRepository memoryRepository,
+        IGraphSyncService graphSyncService, IActorRef graphRelationshipActor)
+    {
+        _memoryRepository = memoryRepository;
+        _graphSyncService = graphSyncService;
+        _graphRelationshipActor = graphRelationshipActor;
+
+        ReceiveAsync<InitializeGraphSchema>(async _ =>
+        {
+            await _graphSyncService.EnsureSchemaAsync();
+            // 인덱스: Memory(id), Memory(userId)
+            // 제약: Memory.id UNIQUE
+        });
+
+        ReceiveAsync<StartFullSync>(async request =>
+        {
+            var totalCount = await _memoryRepository.CountAllMemoriesAsync(request.UserId);
+            var totalPages = (int)Math.Ceiling(totalCount / (double)PageSize);
+
+            Self.Tell(new SyncNextPage
+            {
+                UserId = request.UserId,
+                CurrentPage = 0,
+                TotalPages = totalPages
+            });
+        });
+
+        ReceiveAsync<SyncNextPage>(async request =>
+        {
+            if (request.CurrentPage >= request.TotalPages) return;
+
+            var memories = await _memoryRepository.GetMemoriesPageAsync(
+                request.UserId, request.CurrentPage, PageSize);
+
+            foreach (var memory in memories)
+            {
+                await _graphSyncService.UpsertMemoryNodeAsync(memory);
+                _graphRelationshipActor.Tell(new SuggestRelationshipsRequest
+                {
+                    NewMemory = memory,
+                    ExistingMemories = await _graphSyncService
+                        .FindNearbyNodesAsync(memory.Id, maxDistance: 2)
+                });
+            }
+
+            // 다음 페이지 (Self-Message 페이지네이션)
+            Self.Tell(new SyncNextPage
+            {
+                UserId = request.UserId,
+                CurrentPage = request.CurrentPage + 1,
+                TotalPages = request.TotalPages
+            });
+        });
+    }
+}
+
+// 메시지 정의
+public record InitializeGraphSchema;
+public record StartFullSync(string UserId);
+public record SyncNextPage
+{
+    public string UserId { get; init; }
+    public int CurrentPage { get; init; }
+    public int TotalPages { get; init; }
+}
+```
+
+**핵심 포인트**: `Self.Tell(SyncNextPage)` 페이지네이션은 Section 5의 Self-Message 배치 처리와 동일한 패턴입니다. 페이지 간 다른 메시지(중단 명령 등) 처리가 가능합니다.
+
+### 9. LLM 검색 재시도 전략 (4단계 파이프라인)
+
+벡터 검색 실패 시 키워드 검색, 쿼리 재구성까지 자동 폴백하는 4단계 검색 파이프라인입니다.
+
+```
+검색 파이프라인:
+1. LLM 쿼리 변환 (한국어 → 검색 최적화)
+   → "어제 저장한 그 레시피" → "레시피 cooking recipe 2024-01"
+2. 벡터 임베딩 검색 (pgvector cosine similarity)
+   → 결과 있음 → 반환
+3. LLM 키워드 추출 → 키워드 기반 검색 (full-text search)
+   → 결과 있음 → 반환
+4. 쿼리 재구성 → 2번으로 재시도 (최대 3회)
+```
+
+```csharp
+private async Task<List<MemorySearchResult>> SearchWithRetry(
+    string query, string userId, int maxRetries = 3)
+{
+    var currentQuery = query;
+
+    for (int attempt = 0; attempt < maxRetries; attempt++)
+    {
+        // 1단계: 쿼리 변환 (한국어 + 영어 이중 변환)
+        var transformedQuery = await TransformQuery(currentQuery);
+
+        // 2단계: 벡터 임베딩 검색
+        var embedding = await _embeddingService.GenerateEmbeddingAsync(transformedQuery);
+        var results = await _memoryRepository.SearchByVectorAsync(
+            userId, embedding, topK: 10, minScore: 0.7);
+
+        if (results.Any())
+            return results;
+
+        // 3단계: 키워드 추출 후 텍스트 검색 (폴백)
+        var keywords = await ExtractKeywords(currentQuery);
+        results = await _memoryRepository.SearchByKeywordsAsync(userId, keywords);
+
+        if (results.Any())
+            return results;
+
+        // 4단계: 쿼리 재구성 후 재시도
+        currentQuery = await ReformulateQuery(query, attempt);
+    }
+
+    return new List<MemorySearchResult>();  // 모든 재시도 실패
+}
+```
+
+**검색 전략 비교표**:
+
+| 단계 | 방식 | 강점 | 약점 |
+|------|------|------|------|
+| 벡터 검색 | pgvector cosine | 의미 유사도 | 최신 데이터 임베딩 지연 |
+| 키워드 검색 | full-text search | 정확한 용어 매칭 | 동의어/오타 미처리 |
+| 쿼리 재구성 | LLM reformulation | 다양한 관점 시도 | LLM 호출 비용 |
+
+### 10. 대화 컨텍스트 관리 (이중 메모리 구조)
+
+명시적 대화 이력(최근 10턴)과 LLM이 추출한 단기 기억(대화 맥락 요약) 이중 구조로 컨텍스트를 관리합니다.
+
+```csharp
+// ChatBotActor 내부
+// 1. 명시적 대화 이력 (최근 10개 턴)
+private readonly List<ConversationEntry> _conversationHistory = new();
+private const int MaxConversationEntries = 10;
+
+// 2. LLM이 추출한 단기 기억 (대화 맥락 요약)
+private string _shortTermMemory = "";
+
+private async Task UpdateConversationContext(string userMessage, string botResponse)
+{
+    // 대화 이력 추가 (원형 버퍼처럼 동작)
+    _conversationHistory.Add(new ConversationEntry
+    {
+        UserMessage = userMessage,
+        BotResponse = botResponse,
+        Timestamp = DateTime.UtcNow
+    });
+
+    // 최대 10개 유지 (FIFO 트리밍)
+    while (_conversationHistory.Count > MaxConversationEntries)
+    {
+        _conversationHistory.RemoveAt(0);
+    }
+
+    // LLM으로 대화 맥락 요약 갱신
+    _shortTermMemory = await _llmService.ExtractConversationContext(
+        _conversationHistory, _shortTermMemory);
+}
+```
+
+**이중 메모리 구조**:
+- `_conversationHistory`: 최근 10개 턴의 원본 대화 (사용자 질문 + 봇 응답)
+- `_shortTermMemory`: LLM이 능동적으로 추출한 대화 맥락 요약. "아까 말한 그 책"처럼 애매한 참조를 해석할 때 사용
+
+### 11. Rate Limiting (LLM API 동시 호출 제한)
+
+`SemaphoreSlim`으로 LLM API 동시 호출 수를 제한하고, `RetryPolicy`로 일시적 실패를 재시도합니다.
+
+```csharp
+public class LlmService : ILlmService
+{
+    private static readonly SemaphoreSlim _rateLimiter = new(maxCount: 10);
+
+    public async Task<string> GenerateAsync(string prompt)
+    {
+        await _rateLimiter.WaitAsync();
+        try
+        {
+            return await RetryPolicy.ExecuteAsync(async () =>
+            {
+                var response = await _httpClient.PostAsJsonAsync(
+                    "/v1/chat/completions", new
+                    {
+                        model = "gpt-4",
+                        messages = new[] { new { role = "user", content = prompt } }
+                    });
+                response.EnsureSuccessStatusCode();
+                return await ParseResponse(response);
+            });
+        }
+        finally
+        {
+            _rateLimiter.Release();
+        }
+    }
+}
+```
+
+**Rate Limiting 설계 포인트**:
+- `SemaphoreSlim(10)`: 최대 10개 동시 LLM 호출 허용
+- `WaitAsync()`/`Release()`: `try-finally`로 반드시 해제 보장
+- `RetryPolicy`: 429 Too Many Requests, 503 Service Unavailable 등 일시적 오류 자동 재시도
+- 액터 레벨이 아닌 **서비스 레벨**에서 제한하여, 여러 액터가 공유하는 전역 동시성 제어
+
 ## SSE 스트리밍 (실시간 추론 과정 표시)
 
 `Channel<StreamingUpdate>`를 브릿지로 사용하여 액터의 처리 단계를 실시간으로 클라이언트에 전송합니다.
@@ -347,8 +564,10 @@ builder.Services.AddAkka("AgentSystem", config =>
 7. **느슨한 결합**: 배치 완료 등 이벤트는 `EventStream`으로 발행합니다.
 8. **실시간 피드백**: `Channel<T>`를 브릿지로 SSE 스트리밍합니다.
 9. **세션 관리**: `ConcurrentDictionary<string, IActorRef>`로 사용자별 액터를 관리합니다.
-10. **대화 이력**: 10개 이내로 제한하여 LLM 토큰 사용량을 예측 가능하게 합니다.
+10. **대화 이력**: 이중 메모리 구조(`_conversationHistory` + `_shortTermMemory`)로 10개 이내 이력 + LLM 맥락 요약을 유지합니다 (Section 10 참조).
 11. **타임아웃**: LLM 응답 30초, 세션 3일 타임아웃을 설정합니다.
-12. **Rate Limiting**: `SemaphoreSlim`으로 LLM API 동시 호출 수를 제한합니다 (최대 10개).
+12. **Rate Limiting**: `SemaphoreSlim`으로 LLM API 동시 호출 수를 제한합니다. 서비스 레벨에서 전역 제어합니다 (Section 11 참조).
+13. **검색 재시도**: 벡터 검색 → 키워드 검색 → 쿼리 재구성의 4단계 폴백 파이프라인을 적용합니다 (Section 9 참조).
+14. **DB 동기화**: `Self.Tell()` 페이지네이션으로 중단 가능한 대량 동기화를 구현합니다 (Section 8 참조).
 
 $ARGUMENTS

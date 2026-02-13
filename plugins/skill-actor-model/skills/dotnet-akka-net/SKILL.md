@@ -175,10 +175,83 @@ var scatter = system.ActorOf(
 );
 ```
 
+#### Pool(0) + 동적 AddRoutee
+
+```csharp
+// Pool(0): 라우터만 생성, routee는 동적으로 추가
+var roundrobin = actorSystem.ActorOf(
+    Props.Create<BasicActor>().WithRouter(new RoundRobinPool(0)),
+    "roundrobin");
+
+// 나중에 routee 동적 추가
+var routee = Routee.FromActorRef(counselorActor);
+roundrobin.Tell(new AddRoutee(routee));
+```
+
+> **Pool(0)의 의미**: 크기 0으로 생성하면 라우터만 만들고 routee는 나중에 `AddRoutee`로 동적 추가할 수 있습니다.
+
 ### 6. Dispatcher 설정
-- HOCON 기반 5가지 Dispatcher 타입: Dispatcher, TaskDispatcher, PinnedDispatcher, ForkJoinDispatcher, SynchronizedDispatcher
+- HOCON 기반 5가지 Dispatcher 타입
 - `Props.Create<T>().WithDispatcher("my-dispatcher")`
 - `throughput` 파라미터로 액터당 메시지 배치 크기 제어
+
+```hocon
+# 기본 디스패처: ThreadPool 기반
+custom-dispatcher {
+    type = Dispatcher
+    throughput = 100
+}
+
+# Task 기반 디스패처: .NET Task 활용
+custom-task-dispatcher {
+    type = TaskDispatcher
+    throughput = 100
+}
+
+# 전용 스레드 디스패처: 액터 하나에 스레드 하나 고정
+custom-dedicated-dispatcher {
+    type = PinnedDispatcher
+}
+
+# ForkJoin 디스패처: 전용 스레드풀 사용
+fork-join-dispatcher {
+    type = ForkJoinDispatcher
+    throughput = 1
+    dedicated-thread-pool {
+        thread-count = 1
+        deadlock-timeout = 3s
+        threadtype = background
+    }
+}
+
+# 동기화 디스패처: SynchronizationContext 활용 (UI 스레드 등)
+synchronized-dispatcher {
+    type = SynchronizedDispatcher
+    throughput = 100
+}
+```
+
+```csharp
+// 디스패처 적용
+var actor = actorSystem.ActorOf(
+    Props.Create<BasicActor>().WithDispatcher("custom-dispatcher"),
+    "myActor");
+
+// 라우터 + 디스패처 결합
+var router = actorSystem.ActorOf(
+    Props.Create<BasicActor>()
+        .WithRouter(new RoundRobinPool(5))
+        .WithDispatcher("fork-join-dispatcher"),
+    "routerWithDispatcher");
+```
+
+| 디스패처 | 설명 | 용도 |
+|----------|------|------|
+| `Dispatcher` | .NET ThreadPool 기반, 범용 | 일반적인 액터 처리 |
+| `TaskDispatcher` | .NET Task/TPL 기반 | async/await 패턴 |
+| `PinnedDispatcher` | 액터당 전용 스레드 1개 | I/O 바운드, 블로킹 작업 |
+| `ForkJoinDispatcher` | 전용 스레드풀 | 격리된 스레드풀 필요 시 |
+| `SynchronizedDispatcher` | SynchronizationContext | UI 스레드 접근 필요 시 |
 
 ### 7. 커스텀 Mailbox
 - `UnboundedPriorityMailbox` 상속으로 우선순위 메일박스
@@ -198,6 +271,21 @@ public class IssueTrackerMailbox : UnboundedPriorityMailbox
         };
     }
 }
+```
+
+#### HOCON 메일박스 바인딩
+
+```hocon
+my-custom-mailbox {
+    mailbox-type : "MyApp.IssueTrackerMailbox, MyApp"
+}
+```
+
+```csharp
+// 액터 생성 시 메일박스 지정
+var mailBoxActor = actorSystem.ActorOf(
+    Props.Create(() => new BasicActor())
+         .WithMailbox("my-custom-mailbox"));
 ```
 
 ### 8. 감독 전략 (Supervision)
@@ -222,6 +310,71 @@ protected override SupervisorStrategy SupervisorStrategy()
     );
 }
 ```
+
+### 8-1. Become/Unbecome 상태 전환
+- FSM보다 경량인 상태 관리 방법
+- `Become(handler)`: 메시지 핸들러를 교체하여 상태 전환
+- `UntypedActor` 또는 `ReceiveActor`에서 사용
+
+```csharp
+public class CounselorsActor : UntypedActor
+{
+    private CounselorsState counselorsState = CounselorsState.Offline;
+
+    protected override void OnReceive(object message)
+    {
+        switch (message)
+        {
+            case SetCounselorsState counselor:
+                if (counselor.State == CounselorsState.Online)
+                {
+                    counselorsState = counselor.State;
+                    Become(Online);   // Online 상태로 전환
+                }
+                else
+                {
+                    counselorsState = counselor.State;
+                    Become(OffLine);  // Offline 상태로 전환
+                }
+                break;
+        }
+    }
+
+    private void Online(object message)
+    {
+        switch (message)
+        {
+            case CheckTakeTask checkTask:
+                Sender.Tell(new WishTask() { WishActor = Self });
+                break;
+            case AssignTask assignTask:
+                Sender.Tell("I Take Task");
+                break;
+            case SetCounselorsState counselor when counselor.State == CounselorsState.Offline:
+                Become(OffLine);
+                break;
+        }
+    }
+
+    private void OffLine(object message)
+    {
+        switch (message)
+        {
+            case CheckTakeTask: break; // Offline 상태이므로 무시
+            case SetCounselorsState counselor when counselor.State == CounselorsState.Online:
+                Become(Online);
+                break;
+        }
+    }
+}
+```
+
+| 사용 기준 | Become/Unbecome | FSM<TState, TData> |
+|-----------|----------------|---------------------|
+| 상태 수 | 2~3개 | 3개 이상 |
+| 타임아웃 | 수동 구현 | `StateTimeout` 내장 |
+| 상태 데이터 | 필드 직접 관리 | `Using(data)` DSL |
+| 전이 콜백 | 없음 | `OnTransition()` 내장 |
 
 ### 9. Persistence (RavenDB)
 - `ReceivePersistentActor` 상속, `PersistenceId` 필수
@@ -253,10 +406,45 @@ public class SalesActor : ReceivePersistentActor
 }
 ```
 
-### 10. SSE (Server-Sent Events)
+### 10. SSE (Server-Sent Events) + PipeTo 패턴
 - SSEUserActor: 알림 큐 관리
-- `PipeTo` 패턴: `Task.Delay().PipeTo(Self)` 하트비트
+- `PipeTo` 패턴: `Task.Delay().ContinueWith().PipeTo(Self, Sender)` 비동기 대기
 - SSEController REST API + SSEService 액터 관리
+
+```csharp
+public class SSEUserActor : ReceiveActor
+{
+    private Queue<Notification> notifications = new Queue<Notification>();
+
+    public SSEUserActor(string identyValue)
+    {
+        // 알림 메시지 수신 -> 큐에 저장
+        Receive<Notification>(msg =>
+        {
+            notifications.Enqueue(msg);
+        });
+
+        // 알림 확인 요청 -> 큐에서 꺼내 반환
+        ReceiveAsync<CheckNotification>(async msg =>
+        {
+            if (notifications.Count > 0)
+            {
+                Sender.Tell(notifications.Dequeue());
+            }
+            else
+            {
+                // 알림이 없으면 1초 후 하트비트 반환 (PipeTo 패턴)
+                HeartBeatNotification heartBeat = new HeartBeatNotification();
+                Task.Delay(1000)
+                    .ContinueWith(tr => heartBeat)
+                    .PipeTo(Self, Sender);  // 완료 시 Self에게 전달, 원래 Sender 유지
+            }
+        });
+    }
+}
+```
+
+> **PipeTo 패턴**: `Task.ContinueWith().PipeTo(target, sender)`는 비동기 작업이 완료되면 결과를 지정된 액터에게 자동으로 `Tell`합니다. 액터 내부에서 `await`로 블로킹하는 것보다 안전합니다.
 
 ### 11. MCP Server 통합
 - MCP(Model Context Protocol) 도구에서 액터 연동
@@ -313,6 +501,49 @@ public class HelloController : ControllerBase
     }
 }
 ```
+
+### 14-1. AkkaService 다중 ActorSystem 관리
+
+```csharp
+public class AkkaService
+{
+    private Dictionary<string, ActorSystem> actorSystems = new();
+    private Dictionary<string, IActorRef> actors = new();
+
+    public ActorSystem CreateActorSystem(string name, int port = 0)
+    {
+        if (actorSystems.ContainsKey(name))
+            throw new Exception($"{name} actorsystem has already been created.");
+
+        if (port == 0)
+        {
+            actorSystems[name] = ActorSystem.Create(name);
+        }
+        else
+        {
+            // port > 0이면 Remote 모드 자동 활성화
+            string akkaConfig = @"akka {
+                actor { provider = remote }
+                remote { dot-netty.tcp { port = $port; hostname = ""127.0.0.1"" } }
+            }".Replace("$port", port.ToString());
+            actorSystems[name] = ActorSystem.Create(name,
+                ConfigurationFactory.ParseString(akkaConfig));
+        }
+        return actorSystems[name];
+    }
+
+    public ActorSystem GetActorSystem(string name = "default")
+        => actorSystems.ContainsKey(name) ? actorSystems[name] : CreateActorSystem(name);
+
+    // 액터 레지스트리
+    public void AddActor(string name, IActorRef actor) => actors[name] = actor;
+    public IActorRef GetActor(string name) => actors.GetValueOrDefault(name);
+}
+```
+
+- **다중 ActorSystem**: `Dictionary<string, ActorSystem>`으로 여러 시스템을 이름 기반 관리
+- **액터 레지스트리**: 주요 액터를 이름으로 등록/조회하여 DI 컨테이너에서 접근 용이
+- **원격 모드 자동 전환**: `port` 파라미터가 0이 아니면 자동으로 `Akka.Remote` 활성화
 
 ## 코드 생성 규칙
 

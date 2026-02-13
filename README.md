@@ -19,7 +19,7 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 
 Claude Code에서 아래 명령어를 순서대로 실행합니다.
 
-```shell
+```
 # 1. 마켓플레이스 등록
 /plugin marketplace add psmon/skill-actor-model
 

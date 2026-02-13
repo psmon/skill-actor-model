@@ -109,6 +109,70 @@ private fun active(): Behavior<BatchCommand> {
 }
 ```
 
+#### BulkProcessor (강화된 FSM)
+
+FlushTimeout + threshold 기반 자동 flush가 포함된 실전 패턴:
+
+```kotlin
+sealed class BulkProcessorCommand
+data class DataEvent(val data: Any, val replyTo: ActorRef<Any>) : BulkProcessorCommand()
+object Flush : BulkProcessorCommand()
+private object FlushTimeout : BulkProcessorCommand()
+
+class BulkProcessor private constructor(
+    context: ActorContext<BulkProcessorCommand>,
+    private val buffer: MutableList<Any> = mutableListOf()
+) : AbstractBehavior<BulkProcessorCommand>(context) {
+
+    companion object {
+        fun create(): Behavior<BulkProcessorCommand> {
+            return Behaviors.setup { context -> BulkProcessor(context) }
+        }
+    }
+
+    override fun createReceive(): Receive<BulkProcessorCommand> = idle()
+
+    private fun idle(): Receive<BulkProcessorCommand> {
+        return newReceiveBuilder()
+            .onMessage(DataEvent::class.java) { event ->
+                buffer.add(event.data)
+                startFlushTimer()
+                active()  // IDLE → ACTIVE
+            }
+            .build()
+    }
+
+    private fun active(): Receive<BulkProcessorCommand> {
+        return newReceiveBuilder()
+            .onMessage(DataEvent::class.java) { event ->
+                buffer.add(event.data)
+                if (buffer.size >= 100) { flushBuffer(); idle() }  // 임계치 도달
+                else Behaviors.same()
+            }
+            .onMessage(Flush::class.java) { flushBuffer(); idle() }
+            .onMessageEquals(FlushTimeout) { flushBuffer(); idle() }  // 타임아웃
+            .build()
+    }
+
+    private var flushTimer: Cancellable? = null
+
+    private fun startFlushTimer() {
+        flushTimer = context.scheduleOnce(Duration.ofSeconds(3), context.self, FlushTimeout)
+    }
+
+    private fun flushBuffer() {
+        context.log.info("Processing ${buffer.size} events.")
+        buffer.clear()
+        flushTimer?.cancel()
+    }
+}
+```
+
+| 패턴 | 설명 |
+|------|------|
+| `onMessageEquals(FlushTimeout)` | `private object`에 대한 동등성 비교. 타이머 메시지 처리에 적합 |
+| `context.scheduleOnce()` | 일회성 스케줄링. `Cancellable`을 직접 관리 |
+
 ### 3. 타이머 (Timer)
 - `Behaviors.withTimers { timers -> }` 래핑
 - `timers.startTimerAtFixedRate()`, `startSingleTimer()`
@@ -194,16 +258,164 @@ class HelloPersistentActor(
 }
 ```
 
+#### Custom Store (pipeToSelf)
+
+`DurableStateBehavior` 대신 Repository를 직접 사용하여 영속화하는 패턴:
+
+```kotlin
+// 저장 요청 시 pipeToSelf로 비동기 DB 호출
+private fun onSaveState(message: SavaState): Behavior<HelloStashCommand> {
+    context.pipeToSelf(
+        durableRepository.createOrUpdateDurableStateEx<HelloStashState>(
+            persistenceId, 1L, message.state
+        ).toFuture(),
+        { _, cause ->
+            if (cause == null) SaveSuccess else DbError(RuntimeException(cause))
+        }
+    )
+    return saving(message.state, message.replyTo)  // 저장 대기 상태로 전환
+}
+```
+
+> `pipeToSelf`는 비동기 작업 결과를 자신에게 메시지로 전달하여 액터의 단일 스레드 보장을 유지합니다. Stash 패턴과 결합하면 저장 중 메시지를 버퍼링할 수 있습니다.
+
 ### 7. Stash 패턴
 - 비동기 초기화 중 메시지를 버퍼링
 - `Behaviors.withStash(capacity) { stash -> }` 래핑
 - `stash.stash(message)` 저장, `stash.unstashAll(behavior)` 일괄 처리
+- `pipeToSelf`와 결합: 비동기 DB 로드 → stash → 완료 후 unstashAll
+
+```kotlin
+class HelloStashActor private constructor(
+    private val context: ActorContext<HelloStashCommand>,
+    private val durableRepository: DurableRepository,
+    private val buffer: StashBuffer<HelloStashCommand>
+) {
+    companion object {
+        fun create(persistenceId: String, repo: DurableRepository): Behavior<HelloStashCommand> {
+            return Behaviors.withStash(100) { stashBuffer ->
+                Behaviors.setup { context ->
+                    // pipeToSelf: 비동기 DB 로드 결과를 메시지로 수신
+                    context.pipeToSelf(
+                        repo.findByIdEx<HelloStashState>(persistenceId, 1L).toFuture(),
+                        { value, cause ->
+                            if (cause == null) InitialState(value) else DbError(RuntimeException(cause))
+                        }
+                    )
+                    HelloStashActor(context, repo, stashBuffer).start()
+                }
+            }
+        }
+    }
+
+    // 시작 상태: DB 초기화 대기, 나머지 메시지는 stash
+    private fun start(): Behavior<HelloStashCommand> {
+        return Behaviors.receive(HelloStashCommand::class.java)
+            .onMessage(InitialState::class.java) { msg ->
+                buffer.unstashAll(active(msg.toState()))  // stash된 메시지 재처리
+            }
+            .onMessage(HelloStashCommand::class.java) { msg ->
+                buffer.stash(msg)  // 초기화 중 메시지 보관
+                Behaviors.same()
+            }
+            .build()
+    }
+
+    // 활성 상태: 정상 메시지 처리
+    private fun active(state: HelloStashState): Behavior<HelloStashCommand> {
+        return Behaviors.receive(HelloStashCommand::class.java)
+            .onMessage(GetState::class.java) { msg ->
+                msg.replyTo.tell(state)
+                Behaviors.same()
+            }
+            .onMessage(SavaState::class.java) { msg ->
+                context.pipeToSelf(repo.save(msg.state).toFuture(), { _, cause ->
+                    if (cause == null) SaveSuccess else DbError(RuntimeException(cause))
+                })
+                saving(msg.state, msg.replyTo)  // 저장 대기로 전환
+            }
+            .build()
+    }
+
+    // 저장 상태: DB 저장 중, 메시지 stash
+    private fun saving(state: HelloStashState, replyTo: ActorRef<Done>): Behavior<HelloStashCommand> {
+        return Behaviors.receive(HelloStashCommand::class.java)
+            .onMessage(SaveSuccess::class.java) { _ ->
+                replyTo.tell(Done.getInstance())
+                buffer.unstashAll(active(state))
+            }
+            .onMessage(HelloStashCommand::class.java) { msg ->
+                buffer.stash(msg)
+                Behaviors.same()
+            }
+            .build()
+    }
+}
+```
+
+| API | 설명 |
+|-----|------|
+| `Behaviors.withStash(capacity)` | StashBuffer 생성. capacity는 최대 보관 메시지 수 |
+| `buffer.stash(message)` | 메시지를 보관 |
+| `buffer.unstashAll(behavior)` | 보관된 모든 메시지를 지정된 Behavior에서 재처리 |
+| `context.pipeToSelf(future, mapper)` | 비동기 작업 결과를 자기 자신에게 메시지로 전달 |
 
 ### 8. PubSub (발행-구독)
 - `Topic.create(Class, topicName)` 토픽 생성
 - `Topic.publish(message)`, `Topic.subscribe(actorRef)`
 - 채널 기반 토픽 관리 (`mutableMapOf<String, ActorRef<Topic.Command<T>>>()`)
 - 클러스터 환경에서 노드 간 메시지 전파
+
+```kotlin
+sealed class PubSubCommand : PersitenceSerializable
+data class PublishMessage(val channel: String, val message: String) : PubSubCommand()
+data class Subscribe(val channel: String, val subscriber: ActorRef<String>) : PubSubCommand()
+
+class PubSubActor(
+    context: ActorContext<PubSubCommand>
+) : AbstractBehavior<PubSubCommand>(context) {
+
+    companion object {
+        fun create(): Behavior<PubSubCommand> {
+            return Behaviors.setup { context -> PubSubActor(context) }
+        }
+    }
+
+    // 채널별 Topic 액터를 관리
+    private val topics = mutableMapOf<String, ActorRef<Topic.Command<String>>>()
+
+    override fun createReceive(): Receive<PubSubCommand> {
+        return newReceiveBuilder()
+            .onMessage(PublishMessage::class.java, this::onPublishMessage)
+            .onMessage(Subscribe::class.java, this::onSubscribe)
+            .build()
+    }
+
+    private fun onPublishMessage(command: PublishMessage): Behavior<PubSubCommand> {
+        val topic = topics.getOrPut(command.channel) {
+            context.spawn(Topic.create(String::class.java, command.channel), command.channel)
+        }
+        topic.tell(Topic.publish(command.message))
+        return this
+    }
+
+    private fun onSubscribe(command: Subscribe): Behavior<PubSubCommand> {
+        val topic = topics.getOrPut(command.channel) {
+            context.spawn(Topic.create(String::class.java, command.channel), command.channel)
+        }
+        topic.tell(Topic.subscribe(command.subscriber))
+        return this
+    }
+}
+```
+
+```kotlin
+// Topic API 요약
+val topic = context.spawn(Topic.create(String::class.java, "my-topic"), "my-topic")
+topic.tell(Topic.subscribe(subscriberActorRef))  // 구독
+topic.tell(Topic.publish("hello everyone"))       // 발행
+topic.tell(Topic.unsubscribe(subscriberActorRef)) // 구독 해제
+```
 
 ### 9. 클러스터 (Cluster)
 - **Cluster Membership**: `Cluster.get(system).selfMember()`, 역할(role) 관리
@@ -234,6 +446,68 @@ shardSystem.init(Entity.of(typeKey) { CounterActor.create(it.entityId) })
 - `QueueOfferResult` 처리 (Enqueued, Dropped, Failure, QueueClosed)
 - `Flow` 기반 그래프 처리, 런타임 Flow 교체
 - `Materializer.createMaterializer(system)`
+
+```kotlin
+sealed class GraphCommand
+data class ProcessNumber(val number: Int, val replyTo: ActorRef<GraphCommand>) : GraphCommand()
+data class ProcessedNumber(val result: Int) : GraphCommand()
+object SwitchToMultiply : GraphCommand()
+object SwitchToAdd : GraphCommand()
+
+class GraphActor private constructor(
+    context: ActorContext<GraphCommand>,
+    private var operation: Flow<Int, Int, *>    // 동적으로 교체 가능한 Flow
+) : AbstractBehavior<GraphCommand>(context) {
+
+    companion object {
+        fun create(): Behavior<GraphCommand> {
+            return Behaviors.setup { context ->
+                val initialOperation = Flow.of(Int::class.java).map { it + 1 }
+                GraphActor(context, initialOperation)
+            }
+        }
+    }
+
+    private val materializer = Materializer.createMaterializer(context.system)
+
+    override fun createReceive(): Receive<GraphCommand> {
+        return newReceiveBuilder()
+            .onMessage(ProcessNumber::class.java, this::onProcessNumber)
+            .onMessage(ProcessedNumber::class.java, this::onProcessedNumber)
+            .onMessage(SwitchToMultiply::class.java, this::onSwitchToMultiply)
+            .onMessage(SwitchToAdd::class.java, this::onSwitchToAdd)
+            .build()
+    }
+
+    private fun onProcessNumber(command: ProcessNumber): Behavior<GraphCommand> {
+        Source.single(command.number)
+            .via(operation)                                    // 현재 Flow 적용
+            .buffer(1000, OverflowStrategy.dropHead())
+            .throttle(10, Duration.ofSeconds(1))               // 처리량 제한
+            .runWith(
+                Sink.foreach { result -> command.replyTo.tell(ProcessedNumber(result)) },
+                materializer
+            )
+        return this
+    }
+
+    // 런타임에 연산(Flow)을 변경
+    private fun onSwitchToMultiply(command: SwitchToMultiply): Behavior<GraphCommand> {
+        operation = Flow.of(Int::class.java).map { it * 2 }
+        return this
+    }
+
+    private fun onSwitchToAdd(command: SwitchToAdd): Behavior<GraphCommand> {
+        operation = Flow.of(Int::class.java).map { it + 1 }
+        return this
+    }
+
+    private fun onProcessedNumber(command: ProcessedNumber): Behavior<GraphCommand> {
+        context.log.info("Processed result: ${command.result}")
+        return this
+    }
+}
+```
 
 ### 11. WebSocket 세션 관리
 - 다층 액터 구조: MainStage -> SessionManager -> PersonalRoom -> CounselorRoom

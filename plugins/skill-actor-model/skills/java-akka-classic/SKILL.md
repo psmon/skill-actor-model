@@ -51,6 +51,48 @@ public class HelloActor extends AbstractActor {
 }
 ```
 
+#### Guard 조건 (같은 타입 내 분기)
+
+```java
+.match(String.class, s -> s.equals("CMD_CREATE"), s -> {
+    // "CMD_CREATE" 문자열일 때만 실행
+})
+.match(String.class, s -> s.equals("CMD_WORK"), s -> {
+    // "CMD_WORK" 문자열일 때만 실행
+})
+```
+
+#### Forward (원래 발신자 유지)
+
+```java
+// tell: 현재 액터가 발신자로 설정됨
+target.tell(msg, getSelf());
+
+// forward: 원래 발신자 정보를 유지하며 전달 (프록시, 라우터에 유용)
+target.forward(msg, getContext());
+```
+
+| 패턴 | 코드 | 발신자 정보 |
+|------|------|------------|
+| `tell` | `target.tell(msg, getSelf())` | 현재 액터가 발신자 |
+| `forward` | `target.forward(msg, getContext())` | **원래 발신자** 유지 |
+
+### 1-1. Ask 패턴 (Request-Response)
+- `Patterns.ask()`로 메시지를 보내고 `Future`로 응답 수신
+- `pipe` 패턴으로 Future 결과를 액터에게 자동 전달 (블로킹 회피)
+
+```java
+// ask 패턴 기본 사용법
+Timeout timeout = Timeout.create(Duration.ofSeconds(1));
+Future<Object> future = Patterns.ask(targetActor, "request", timeout);
+String result = (String) Await.result(future, timeout.duration());
+
+// pipe 패턴 (논블로킹 권장)
+pipe(future, getContext().dispatcher()).to(getSender());
+```
+
+> **주의**: `Await.result()`는 현재 스레드를 블로킹합니다. 가능하면 `pipe` 패턴을 사용하세요.
+
 ### 2. 라우팅 (Router)
 - **Pool Router**: `RoundRobinPool`, `RandomPool`, `BalancingPool`, `SmallestMailboxPool`, `BroadcastPool`, `TailChoppingPool`
 - **Group Router**: `RoundRobinGroup` (기존 액터 경로 기반)
@@ -67,6 +109,57 @@ ActorRef router = system.actorOf(
 List<String> paths = Arrays.asList("/user/parent/w1", "/user/parent/w2");
 ActorRef groupRouter = context().actorOf(new RoundRobinGroup(paths).props(), "router");
 ```
+
+### 2-1. HOCON 선언적 라우터 설정
+- `FromConfig.getInstance()`로 코드 변경 없이 설정 파일에서 라우팅 전략 적용
+
+```hocon
+akka.actor.deployment {
+  /router1 {
+    router = round-robin-pool
+    nr-of-instances = 5
+  }
+  /router2 {
+    router = random-pool
+    nr-of-instances = 5
+  }
+  /router3 {
+    router = balancing-pool
+    nr-of-instances = 5
+    pool-dispatcher { attempt-teamwork = off }
+  }
+  /router5 {
+    router = smallest-mailbox-pool
+    nr-of-instances = 5
+  }
+  /router6 {
+    router = broadcast-pool
+    nr-of-instances = 5
+  }
+  /router7 {
+    router = tail-chopping-pool
+    nr-of-instances = 5
+    within = 2 milliseconds
+    tail-chopping-router.interval = 300 milliseconds
+  }
+}
+```
+
+```java
+// FromConfig: HOCON 설정에서 라우터 전략을 자동 로드
+ActorRef router = actorSystem.actorOf(
+    FromConfig.getInstance().props(WorkerActor.Props(probe.getRef())),
+    "router1");  // HOCON의 /router1 설정이 자동 적용
+```
+
+| 전략 | 설명 | 사용 시나리오 |
+|------|------|-------------|
+| `round-robin-pool` | 순서대로 균등 분배 | 일반적인 작업 분배 |
+| `random-pool` | 무작위 분배 | 부하가 균일한 작업 |
+| `balancing-pool` | 공유 메일박스에서 가져감 | 처리 시간이 불균일한 작업 |
+| `smallest-mailbox-pool` | 메일박스가 가장 적은 routee에 분배 | 작업량 편중 방지 |
+| `broadcast-pool` | 모든 routee에 동시 전달 | 전체 통지, 캐시 갱신 |
+| `tail-chopping-pool` | 순차 전송 후 첫 응답 사용 | 지연 시간 최소화 |
 
 ### 3. 타이머 (Timer)
 - `AbstractActorWithTimers` 상속
@@ -96,6 +189,45 @@ public class TimerActor extends AbstractActorWithTimers {
 ### 4. 배치 처리 (Batch)
 - 타이머 기반 메시지 축적 후 주기적 일괄 처리
 - `SafeBatchActor` 패턴: 메시지를 List에 축적, 타이머 Tick마다 flush
+
+```java
+public class SafeBatchActor extends AbstractActorWithTimers {
+    private static final Object TICK_KEY = "TickKey";
+    private final LoggingAdapter log = Logging.getLogger(getContext().getSystem(), this);
+    private final ArrayList<String> batchList = new ArrayList<>();
+
+    public SafeBatchActor() {
+        getTimers().startSingleTimer(TICK_KEY, new FirstTick(), Duration.ofMillis(0));
+    }
+
+    public static Props Props() {
+        return Props.create(SafeBatchActor.class);
+    }
+
+    @Override
+    public Receive createReceive() {
+        return receiveBuilder()
+            .match(String.class, message -> {
+                batchList.add(message);
+            })
+            .match(FirstTick.class, message -> {
+                getTimers().startPeriodicTimer(
+                    TICK_KEY, new Tick(), Duration.ofSeconds(1));
+            })
+            .match(Tick.class, message -> {
+                log.info("Batch Flush {}", batchList.size());
+                // 여기서 bulk INSERT, API 호출 등 수행
+                batchList.clear();
+            })
+            .build();
+    }
+
+    private static final class FirstTick {}
+    private static final class Tick {}
+}
+```
+
+> **실무 팁**: `batchList.size() >= threshold` 조건으로 즉시 Flush하는 로직을 추가하면 더 효율적입니다.
 
 ### 5. 감독 전략 (Supervision)
 - `OneForOneStrategy` / `AllForOneStrategy`
@@ -128,6 +260,45 @@ ActorRef throttler = Source.actorRef(1000, OverflowStrategy.dropNew())
     .run(materializer);
 ```
 
+### 6-1. Backpressure 파이프라인
+- `Source.range()` → `buffer(backpressure)` → `mapAsync()` → `Sink.foreach()` 완전한 파이프라인
+- 비동기 API 호출에 배압 적용
+
+```java
+Source<Integer, NotUsed> source = Source.range(1, 4000);
+
+// 병렬 비동기 처리 Flow
+int parallelism = 450;
+Flow<Integer, String, NotUsed> parallelFlow =
+    Flow.<Integer>create()
+        .mapAsync(parallelism, param -> CompletableFuture.supplyAsync(() -> {
+            // 비동기 API 호출 시뮬레이션
+            return "Response for " + param;
+        }, executor));
+
+// Buffer + Backpressure 전략
+Flow<Integer, Integer, NotUsed> backpressureFlow =
+    Flow.<Integer>create()
+        .buffer(1000, OverflowStrategy.backpressure());
+
+// 파이프라인 연결 및 실행
+source.via(backpressureFlow)
+      .via(parallelFlow)
+      .to(Sink.foreach(s -> { /* 처리 완료 */ }))
+      .run(materializer);
+```
+
+**OverflowStrategy 비교**:
+
+| 전략 | 설명 |
+|------|------|
+| `backpressure()` | 버퍼가 가득 차면 upstream에 신호를 보내 생산 중단 |
+| `dropNew()` | 버퍼가 가득 차면 새로운 요소를 버림 |
+| `dropHead()` | 버퍼가 가득 차면 가장 오래된 요소를 버림 |
+| `dropTail()` | 버퍼가 가득 차면 가장 최근 요소를 버림 |
+| `dropBuffer()` | 버퍼를 비우고 새 요소만 유지 |
+| `fail()` | 버퍼가 가득 차면 스트림 실패 |
+
 ### 7. 클러스터 (Cluster)
 - `ClusterListener`: MemberUp, UnreachableMember, MemberRemoved 이벤트 감시
 - `ClusterRouterPool`: 멀티 노드 라우팅
@@ -148,6 +319,56 @@ ActorRef throttler = Source.actorRef(1000, OverflowStrategy.dropNew())
 - `@Configuration` + `@Bean`으로 ActorSystem 관리
 - `@PostConstruct` / `@PreDestroy` 라이프사이클
 - `AkkaManager` 싱글턴 패턴
+
+### 11. Dispatcher 설정
+- Dispatcher는 액터에 스레드를 할당하는 핵심 구성 요소
+- CPU-bound는 `fork-join-executor`, I/O-bound는 `thread-pool-executor` 사용
+
+```hocon
+# 기본 Dispatcher - 비블로킹 액터용
+my-dispatcher {
+  type = Dispatcher
+  executor = "fork-join-executor"
+  fork-join-executor {
+    parallelism-min = 2
+    parallelism-factor = 2.0
+    parallelism-max = 10
+  }
+  throughput = 100
+}
+
+# 블로킹 Dispatcher - I/O 작업용
+my-blocking-dispatcher {
+  type = Dispatcher
+  executor = "thread-pool-executor"
+  thread-pool-executor {
+    fixed-pool-size = 16
+  }
+  throughput = 5
+}
+```
+
+```java
+// Props 생성 시 Dispatcher 지정
+ActorRef actor = actorSystem.actorOf(
+    HelloWorld.Props().withDispatcher("my-dispatcher"), "actor1");
+
+// 블로킹 작업용 Dispatcher
+ActorRef timerActor = actorSystem.actorOf(
+    TimerActor.Props().withDispatcher("my-blocking-dispatcher"), "timer");
+
+// Materializer에 Dispatcher 적용 (Streams)
+ActorMaterializerSettings settings =
+    ActorMaterializerSettings.create(actorSystem)
+        .withDispatcher("my-dispatcher-streamtest");
+Materializer materializer = ActorMaterializer.create(settings, actorSystem);
+```
+
+| 유형 | Executor | 용도 |
+|------|----------|------|
+| CPU 집약적 | `fork-join-executor` | 계산 위주, 짧은 작업 |
+| I/O 블로킹 | `thread-pool-executor` (fixed-pool) | DB 조회, 외부 API 호출 |
+| 스트림 처리 | `thread-pool-executor` (large pool) | Akka Streams 파이프라인 |
 
 ## 코드 생성 규칙
 
