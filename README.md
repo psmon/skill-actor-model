@@ -25,7 +25,27 @@ Claude Code에서 아래 명령어를 순서대로 실행합니다.
 
 # 2. 플러그인 설치
 /plugin install skill-actor-model@actor-model-skills
+
+- Browser Plugin 선택
+- Install : skill-actor-model - 선택
+   Install for you (user scope)
+   Install for all collaborators on this repository (project scope)
+ > Install for you, in this repo only (local scope)
+
+# 3. 플러그인 업데이트및 제거
+/plugin
+- 좌우키 ( Installed, Marketplace ) 탭이용
 ```
+
+- .claude/settings.json : 인스톨 인식잘 안되는경우 다음 설정 true한후 클코드 다시시작
+```
+{
+  "enabledPlugins": {
+    "skill-actor-model@actor-model-skills": true
+  }
+}
+```
+
 
 설치 후 `/java-akka-classic`, `/kotlin-pekko-typed`, `/dotnet-akka-net`, `/actor-ai-agent` 명령어를 사용할 수 있습니다.
 

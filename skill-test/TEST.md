@@ -2,23 +2,31 @@
 
 작성코드는 커밋되지 않으며 스킬을 활용하고 해당 스킬이 코드생성및 수행을 잘하는지 셀프 개선 활동을 위한 프롬프트입니다.
 
+설치 스콥에따라 네임스페이스 이용가
+```
+/kotlin-pekko-typed 블라블라
+or
+/skill-actor-model:kotlin-pekko-typed 블라블라 
+
+```
+
 ## 1. Hello World 액터 코드 
 
 DOC : https://getakka.net/articles/actors/receive-actor-api.html
 
 ### Kottlin Pekko Typed
 ```
-/skill-actor-model:kotlin-pekko-typed skill-test/projects/sample1 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
+/kotlin-pekko-typed skill-test/projects/sample1 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
 ```
 
 ### Java Akka Classic
 ```
-/skill-actor-model:java-akka-classic skill-test/projects/sample2 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
+/java-akka-classic skill-test/projects/sample2 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
 ```
 
 ### C# Akka.NET
 ```
-/skill-actor-model:dotnet-akka-net skill-test/projects/sample3 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
+/dotnet-akka-net skill-test/projects/sample3 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
 ```
 
 ## 2. Router
@@ -27,19 +35,19 @@ DOC : https://getakka.net/articles/actors/routers.html
 
 ### Kottlin Pekko Typed
 ```
-/skill-actor-model:kotlin-pekko-typed hello world액터모델을 PoolRouter이용해 5개의 분배작업자를 구성 RoundRobin,Broadcast,ConsistentHashing,Random 콘솔프로젝트로 수행 \
+/kotlin-pekko-typed hello world액터모델을 PoolRouter이용해 5개의 분배작업자를 구성 RoundRobin,Broadcast,ConsistentHashing,Random 콘솔프로젝트로 수행 \
 skill-test/projects/sample4 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함)
 ```
 
 ### Java Akka Classic
 ```
-/skill-actor-model:java-akka-classic hello world액터모델을 PoolRouter이용해 5개의 분배작업자를 구성 RoundRobin,Broadcast,ConsistentHashing,Random 콘솔프로젝트로 수행 \
+/java-akka-classic hello world액터모델을 PoolRouter이용해 5개의 분배작업자를 구성 RoundRobin,Broadcast,ConsistentHashing,Random 콘솔프로젝트로 수행 \
 skill-test/projects/sample5 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함)
 ```
 
 ### C# Akka.NET
 ```
-/skill-actor-model:dotnet-akka-net hello world액터모델을 PoolRouter이용해 5개의 분배작업자를 구성 RoundRobin,Broadcast,ConsistentHashing,Random 콘솔프로젝트로 수행 \
+/dotnet-akka-net hello world액터모델을 PoolRouter이용해 5개의 분배작업자를 구성 RoundRobin,Broadcast,ConsistentHashing,Random 콘솔프로젝트로 수행 \
 skill-test/projects/sample6 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함)
 ```
 
@@ -64,6 +72,3 @@ skill-test/projects/sample6 하위폴터에 프로젝트 생성, 생성후 실�
 - 유닛테스트가 있는경우 유닛테스트도 수행
 - 테스트 결과리포팅에 간단하게 프로젝트 컨셉도 설명할것
 - 프로젝트별 1회 테스트이기때문에 테스트가 기록된 프로젝트는 건너뛰어도되며 새롭게 추가된 프로젝트만 수행할것
-
-
-
