@@ -211,17 +211,99 @@ context.watch(childActor)
 ```
 
 ### 5. 라우팅 (Router)
-- **Pool Router**: `Routers.pool(size) { Behavior }` + `withRoundRobinRouting()`
+- **Pool Router**: `Routers.pool(size, Behavior)` + 라우팅 전략
 - **Group Router**: `ServiceKey` + `Receptionist` + `Routers.group(serviceKey)`
+- **지원 전략**: RoundRobin, Random, ConsistentHashing, Broadcast(커스텀)
 - 커스텀 스마트 라우터: 가중치 기반 분배
 
-```kotlin
-// Pool Router
-val pool = Routers.pool(5) { HelloActor.create() }
-    .withRoundRobinRouting()
-val router = context.spawn(pool, "hello-pool")
+> **주의 (Kotlin 타입 추론)**: `Routers.pool(size)` 에 트레일링 람다 `{ Behavior }` 를 사용하면 Kotlin 컴파일러가 `Behavior<T>` 타입을 추론하지 못합니다.
+> 반드시 `Routers.pool(size, Behavior)` 형태로 Behavior를 두 번째 인자로 직접 전달하고, `val pool: PoolRouter<T>` 타입을 명시해야 합니다.
 
-// Group Router (클러스터 환경)
+```kotlin
+// ❌ 컴파일 에러 - Kotlin 트레일링 람다 타입 추론 실패
+val pool = Routers.pool(5) { HelloActor.create() }
+
+// ✅ 올바른 사용법 - Behavior를 두 번째 인자로 직접 전달 + 타입 명시
+val pool: PoolRouter<WorkerCommand> = Routers.pool(5, HelloWorkerActor.create())
+    .withRoundRobinRouting()
+```
+
+#### Pool Router - 4가지 라우팅 전략
+
+```kotlin
+// 1) RoundRobin - 순환 분배 (1→2→3→4→5→1→...)
+val roundRobin: PoolRouter<WorkerCommand> = Routers.pool(5, HelloWorkerActor.create())
+    .withRoundRobinRouting()
+val router1 = context.spawn(roundRobin, "roundrobin-pool")
+
+// 2) Random - 무작위 분배
+val random: PoolRouter<WorkerCommand> = Routers.pool(5, HelloWorkerActor.create())
+    .withRandomRouting()
+val router2 = context.spawn(random, "random-pool")
+
+// 3) ConsistentHashing - 동일 key → 항상 동일 워커로 라우팅
+//    메시지에서 해시 키를 추출하는 함수 제공 필요
+val hashing: PoolRouter<WorkerCommand> = Routers.pool(5, HelloWorkerActor.create())
+    .withConsistentHashingRouting(10) { message: WorkerCommand ->
+        when (message) {
+            is HelloTask -> message.key  // 해시 키 추출
+            else -> ""
+        }
+    }
+val router3 = context.spawn(hashing, "consistent-hashing-pool")
+
+// 4) Broadcast - 커스텀 구현 (Pekko Typed PoolRouter에 내장 전략 없음)
+//    N개 워커를 직접 스폰하고 메시지를 전체에게 fan-out
+val router4 = context.spawn(BroadcastRouter.create(5), "broadcast-pool")
+```
+
+#### Broadcast Router (커스텀 구현)
+
+Pekko Typed의 `PoolRouter`에는 Broadcast 전략이 내장되어 있지 않으므로,
+워커를 직접 스폰하고 메시지를 전체에게 전달하는 커스텀 액터로 구현합니다.
+
+```kotlin
+class BroadcastRouter private constructor(
+    context: ActorContext<WorkerCommand>,
+    private val workers: List<ActorRef<WorkerCommand>>
+) : AbstractBehavior<WorkerCommand>(context) {
+
+    companion object {
+        fun create(poolSize: Int): Behavior<WorkerCommand> {
+            return Behaviors.setup { context ->
+                val workers = (1..poolSize).map { i ->
+                    context.spawn(HelloWorkerActor.create(), "broadcast-worker-$i")
+                }
+                BroadcastRouter(context, workers)
+            }
+        }
+    }
+
+    override fun createReceive(): Receive<WorkerCommand> {
+        return newReceiveBuilder()
+            .onMessage(HelloTask::class.java) { task ->
+                workers.forEach { worker -> worker.tell(task) }
+                this
+            }
+            .onMessage(StopWorker::class.java) { stop ->
+                workers.forEach { worker -> worker.tell(stop) }
+                Behaviors.stopped()
+            }
+            .build()
+    }
+}
+```
+
+| 전략 | API | 특징 |
+|------|-----|------|
+| RoundRobin | `.withRoundRobinRouting()` | 순환 분배, 균등 부하 |
+| Random | `.withRandomRouting()` | 무작위, 통계적 균등 |
+| ConsistentHashing | `.withConsistentHashingRouting(vnodes) { msg -> key }` | 동일 키 → 동일 워커 보장 |
+| Broadcast | 커스텀 액터 (fan-out) | 1개 메시지 → 전체 워커 수신 |
+
+#### Group Router (클러스터 환경)
+
+```kotlin
 val serviceKey = ServiceKey.create(WorkerCommand::class.java, "worker")
 context.system.receptionist().tell(Receptionist.register(serviceKey, workerRef))
 val group = Routers.group(serviceKey).withRoundRobinRouting()
@@ -557,5 +639,7 @@ class ActorController @Autowired constructor(private val akka: AkkaConfiguration
 8. 타이머가 필요하면 `Behaviors.withTimers { timers -> Behaviors.setup { } }` 패턴을 사용합니다.
 9. 감독 전략은 자식 생성 시 `Behaviors.supervise(behavior).onFailure(strategy)`로 개별 적용합니다.
 10. Spring 통합 시 Coroutine의 `suspend` + `.await()`로 Ask 패턴을 사용합니다.
+11. **`Routers.pool(size, behavior)` 형태로 Behavior를 두 번째 인자로 직접 전달**합니다. 트레일링 람다 `Routers.pool(size) { behavior }` 는 Kotlin 타입 추론 실패로 컴파일 에러가 발생합니다. 반드시 `val pool: PoolRouter<T>` 타입도 명시합니다.
+12. **Broadcast 라우팅**은 Pekko Typed PoolRouter에 내장 전략이 없으므로, 워커를 직접 스폰하고 `workers.forEach { it.tell(msg) }` 로 fan-out하는 커스텀 액터로 구현합니다.
 
 $ARGUMENTS

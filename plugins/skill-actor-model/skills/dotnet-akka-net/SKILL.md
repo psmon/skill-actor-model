@@ -173,6 +173,33 @@ var scatter = system.ActorOf(
         .WithRouter(new ScatterGatherFirstCompletedPool(0, TimeSpan.FromSeconds(10))),
     "scatter"
 );
+
+// ConsistentHashing Pool Router
+// 동일 해시키를 가진 메시지는 항상 같은 routee에게 전달
+var consistentHash = system.ActorOf(
+    Props.Create<BasicActor>().WithRouter(new ConsistentHashingPool(5)),
+    "consistenthash"
+);
+
+// Random Pool Router
+var random = system.ActorOf(
+    Props.Create<BasicActor>().WithRouter(new RandomPool(5)),
+    "random"
+);
+```
+
+#### ConsistentHashingPool 메시지 정의
+
+ConsistentHashing 라우터를 사용하려면 메시지가 `IConsistentHashable` 인터페이스를 구현해야 합니다.
+
+```csharp
+using Akka.Routing;
+
+// ConsistentHashing용 메시지 (IConsistentHashable 구현 필수)
+public record HashedMessage(string Content, string HashKey) : IConsistentHashable
+{
+    public object ConsistentHashKey => HashKey;
+}
 ```
 
 #### Pool(0) + 동적 AddRoutee

@@ -94,7 +94,7 @@ pipe(future, getContext().dispatcher()).to(getSender());
 > **주의**: `Await.result()`는 현재 스레드를 블로킹합니다. 가능하면 `pipe` 패턴을 사용하세요.
 
 ### 2. 라우팅 (Router)
-- **Pool Router**: `RoundRobinPool`, `RandomPool`, `BalancingPool`, `SmallestMailboxPool`, `BroadcastPool`, `TailChoppingPool`
+- **Pool Router**: `RoundRobinPool`, `RandomPool`, `BalancingPool`, `SmallestMailboxPool`, `BroadcastPool`, `TailChoppingPool`, `ConsistentHashingPool`
 - **Group Router**: `RoundRobinGroup` (기존 액터 경로 기반)
 - HOCON 설정 기반 `FromConfig.getInstance()` 선언적 라우터
 
@@ -108,6 +108,39 @@ ActorRef router = system.actorOf(
 // Group Router
 List<String> paths = Arrays.asList("/user/parent/w1", "/user/parent/w2");
 ActorRef groupRouter = context().actorOf(new RoundRobinGroup(paths).props(), "router");
+
+// ConsistentHashing Pool Router
+// 메시지가 ConsistentHashable을 구현하면 동일 해시키 → 동일 routee 보장
+ActorRef hashRouter = system.actorOf(
+    new ConsistentHashingPool(5).props(Props.create(WorkerActor.class)),
+    "consistentHashRouter"
+);
+```
+
+#### ConsistentHashingPool 메시지 정의
+
+ConsistentHashing 라우터를 사용하려면 메시지가 `ConsistentHashingRouter.ConsistentHashable`과 `Serializable`을 구현해야 합니다.
+
+```java
+import akka.routing.ConsistentHashingRouter;
+import java.io.Serializable;
+
+public final class HelloMessage
+        implements ConsistentHashingRouter.ConsistentHashable, Serializable {
+    private final String name;
+    private final String hashKey;
+
+    public HelloMessage(String name) { this(name, name); }
+    public HelloMessage(String name, String hashKey) {
+        this.name = name;
+        this.hashKey = hashKey;
+    }
+
+    public String getName() { return name; }
+
+    @Override
+    public Object consistentHashKey() { return hashKey; }
+}
 ```
 
 ### 2-1. HOCON 선언적 라우터 설정
@@ -127,6 +160,10 @@ akka.actor.deployment {
     router = balancing-pool
     nr-of-instances = 5
     pool-dispatcher { attempt-teamwork = off }
+  }
+  /router4 {
+    router = consistent-hashing-pool
+    nr-of-instances = 5
   }
   /router5 {
     router = smallest-mailbox-pool
@@ -160,6 +197,7 @@ ActorRef router = actorSystem.actorOf(
 | `smallest-mailbox-pool` | 메일박스가 가장 적은 routee에 분배 | 작업량 편중 방지 |
 | `broadcast-pool` | 모든 routee에 동시 전달 | 전체 통지, 캐시 갱신 |
 | `tail-chopping-pool` | 순차 전송 후 첫 응답 사용 | 지연 시간 최소화 |
+| `consistent-hashing-pool` | 동일 해시키 → 동일 routee 보장 | 세션 친화성, 사용자별 처리 |
 
 ### 3. 타이머 (Timer)
 - `AbstractActorWithTimers` 상속
@@ -384,5 +422,6 @@ Materializer materializer = ActorMaterializer.create(settings, actorSystem);
    - 부하 인식: `SmallestMailboxPool`
    - 브로드캐스트: `BroadcastPool`
    - 최저 지연: `TailChoppingPool`
+   - 해시 기반: `ConsistentHashingPool` (메시지에 `ConsistentHashable` 구현 필요)
 
 $ARGUMENTS
