@@ -591,6 +591,88 @@ class GraphActor private constructor(
 }
 ```
 
+#### Queue 기반 Throttle (Source.queue)
+
+`Source.queue()`로 큐를 생성하고 `QueueOfferResult`로 오버플로우를 감지하는 패턴입니다.
+GraphActor와 달리 **생산자가 큐에 직접 offer**하고, 버퍼 초과 시 드롭을 추적할 수 있습니다.
+
+```kotlin
+sealed class ThrottleCommand
+data class EmitEvent(val eventId: Int, val payload: String) : ThrottleCommand()
+data class EventProcessed(val eventId: Int) : ThrottleCommand()
+data class GetStats(val replyTo: ActorRef<ThrottleStats>) : ThrottleCommand()
+object Shutdown : ThrottleCommand()
+
+data class ThrottleStats(val totalEmitted: Int, val totalProcessed: Int, val totalDropped: Int)
+
+class ThrottleEventActor private constructor(
+    context: ActorContext<ThrottleCommand>
+) : AbstractBehavior<ThrottleCommand>(context) {
+
+    companion object {
+        private const val THROTTLE_RATE = 3   // 초당 처리량
+        private const val BUFFER_SIZE = 100   // 버퍼 크기 (초과 시 드롭)
+
+        fun create(): Behavior<ThrottleCommand> {
+            return Behaviors.setup { ctx -> ThrottleEventActor(ctx) }
+        }
+    }
+
+    private val materializer = Materializer.createMaterializer(context.system)
+    private val processedCount = AtomicInteger(0)
+    private val droppedCount = AtomicInteger(0)
+    private val emittedCount = AtomicInteger(0)
+
+    // Source.queue → throttle → Sink 파이프라인
+    // dropNew: 버퍼가 가득 차면 새로 들어오는 이벤트를 거부
+    private val queue: SourceQueueWithComplete<Pair<Int, String>> = Source
+        .queue<Pair<Int, String>>(BUFFER_SIZE, OverflowStrategy.dropNew())
+        .throttle(THROTTLE_RATE, Duration.ofSeconds(1))
+        .to(Sink.foreach { (eventId, _) ->
+            processedCount.incrementAndGet()
+            context.self.tell(EventProcessed(eventId))
+        })
+        .run(materializer)
+
+    override fun createReceive(): Receive<ThrottleCommand> {
+        return newReceiveBuilder()
+            .onMessage(EmitEvent::class.java, this::onEmitEvent)
+            .onMessage(GetStats::class.java, this::onGetStats)
+            .onMessageEquals(Shutdown) { queue.complete(); Behaviors.stopped() }
+            .build()
+    }
+
+    // offer() 후 QueueOfferResult로 큐 진입 여부 확인
+    private fun onEmitEvent(command: EmitEvent): Behavior<ThrottleCommand> {
+        emittedCount.incrementAndGet()
+        queue.offer(Pair(command.eventId, command.payload)).thenAccept { result ->
+            when (result) {
+                is QueueOfferResult.`Enqueued$` -> { /* 큐에 추가됨 */ }
+                is QueueOfferResult.`Dropped$` -> droppedCount.incrementAndGet()
+                is QueueOfferResult.Failure -> context.log.error("Queue offer failed")
+                is QueueOfferResult.`QueueClosed$` -> context.log.warn("Queue already closed")
+            }
+        }
+        return this
+    }
+
+    private fun onGetStats(command: GetStats): Behavior<ThrottleCommand> {
+        command.replyTo.tell(ThrottleStats(
+            emittedCount.get(), processedCount.get(), droppedCount.get()))
+        return this
+    }
+}
+```
+
+> **Kotlin에서 Scala 싱글턴 접근**: `QueueOfferResult.Enqueued`, `Dropped`, `QueueClosed`는 Scala object이므로 Kotlin에서 백틱으로 `\`Enqueued$\``, `\`Dropped$\``, `\`QueueClosed$\``로 접근합니다. `Failure`는 case class이므로 그대로 사용합니다.
+
+| QueueOfferResult | 의미 | 대응 전략 |
+|------------------|------|-----------|
+| `Enqueued$` | 큐에 정상 추가됨 | 별도 처리 불필요 |
+| `Dropped$` | 버퍼 초과로 거부됨 | 카운터 증가, 로깅, 재시도 등 |
+| `Failure` | 스트림 오류 발생 | 에러 로깅, 복구 처리 |
+| `QueueClosed$` | 스트림이 이미 종료됨 | 큐 재생성 또는 종료 |
+
 ### 11. WebSocket 세션 관리
 - 다층 액터 구조: MainStage -> SessionManager -> PersonalRoom -> CounselorRoom
 - 세션 라이프사이클 관리, 타이머 기반 자동 처리

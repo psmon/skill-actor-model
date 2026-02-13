@@ -12,6 +12,9 @@
 | 4 | sample4 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | N/A |
 | 5 | sample5 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | N/A |
 | 6 | sample6 | C# + Akka.NET 1.5.x | `/dotnet-akka-net` | PASS | N/A |
+| 7 | sample7 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | N/A |
+| 8 | sample8 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | N/A |
+| 9 | sample9 | C# + Akka.NET 1.5.40 | `/dotnet-akka-net` | PASS | N/A |
 
 ---
 
@@ -211,10 +214,146 @@
 
 ---
 
+## sample7 — Kotlin Pekko Typed Streams Throttle
+
+**컨셉**: Pekko Streams 기반 이벤트 스로틀링과 백프레셔 처리. `Source.queue(100, DropNew)` → `.throttle(3/sec)` → `Sink.foreach` 파이프라인으로 초당 처리량을 제한한다. 3단계 페이즈로 시연: Phase 1은 일정 간격 투입(30개, 50ms간격 ≈ 20개/초), Phase 2는 버스트 투입(150개 즉시), Phase 3은 통계 수집.
+
+**실행**: `./gradlew run`
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║   Pekko Typed - Throttle & Overflow 데모                    ║
+║   초당 처리: 3개/초 | 버퍼: 100 | 전략: DropNew             ║
+╚══════════════════════════════════════════════════════════════╝
+
+──── Phase 1: 일정 간격 이벤트 투입 (30개, 50ms 간격 ≈ 20개/초) ────
+[설정] 초당 처리량: 3개/초, 버퍼 크기: 100 (초과 시 신규 이벤트 드롭)
+[처리 완료 #1/12] eventId=1, payload="scheduled-event-1" ← Throttle 통과 (3개/초 제한)
+[처리 완료 #2/19] eventId=2, payload="scheduled-event-2" ← Throttle 통과
+[처리 완료 #3/24] eventId=3, payload="scheduled-event-3" ← Throttle 통과
+...
+
+──── Phase 2: 버스트 이벤트 투입 (150개 즉시) ────
+=== 버스트 모드: 150개 이벤트를 즉시 투입 (버퍼 100 초과 시 드롭 발생) ===
+[드롭 #66] eventId=110 → 버퍼 100개 초과 - DropNew로 드롭
+[드롭 #71] eventId=180 → 버퍼 100개 초과 - DropNew로 드롭
+...
+
+──── Phase 3: 최종 통계 요청 ────
+╔══════════════════════════════════════════════════════════════╗
+║   최종 처리 통계                                            ║
+║   총 투입: 180개                                             ║
+║   처리됨: 38개 (Throttle 통과)                              ║
+║   드롭됨: 71개 (버퍼 오버플로우)                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+[시스템 종료] 모든 액터를 정지합니다.
+BUILD SUCCESSFUL in 24s
+```
+
+**검증**:
+- Phase 1: 30개 이벤트를 20개/초로 투입 → Throttle이 3개/초로 제한하여 처리 지연 발생
+- Phase 2: 150개 버스트 → 버퍼(100) 초과분 71개 DropNew로 드롭
+- 최종: 투입 180개, 처리 38개(+통계 후 추가 처리 6개=44개), 드롭 71개 — 나머지는 버퍼 잔류 후 시스템 종료
+- Pekko Streams의 `Source.queue` + `throttle` + `DropNew` 오버플로우 전략 정상 동작
+
+---
+
+## sample8 — Java Akka Classic Streams Throttle
+
+**컨셉**: Akka Streams 기반 스로틀 파이프라인. `Source.actorRef(100, DropNew)` → `.throttle(3/sec)` → `Sink.actorRef(EventProcessorActor)` 구조. 150건 이벤트를 한번에 버스트 발행하여 버퍼(100) 초과 시 드롭, 초당 3건 처리율 제한을 시연한다.
+
+**실행**: `./gradlew run`
+
+```
+========================================
+  Akka Streams Throttle 데모 시작
+  설정: 초당 3건 처리, 버퍼 100, 오버플로우 시 dropNew
+========================================
+
+[Main] Throttle 파이프라인 생성 완료 (버퍼=100, 초당 3건)
+[Main] 이벤트 150 건 버스트 발행 시작 → 버퍼(100) 초과분은 드롭됩니다
+[Main] 이벤트 150 건 발행 완료 (버퍼 100 초과 → 약 50 건 드롭 예상)
+
+[Processor] 처리 #1 | Event[id=1, payload=sensor-data-1] | 지연시간: 42ms
+[Processor] 처리 #2 | Event[id=2, payload=sensor-data-2] | 지연시간: 12ms
+[Processor] 처리 #3 | Event[id=3, payload=sensor-data-3] | 지연시간: 12ms
+[Processor] 처리 #4 | Event[id=4, payload=sensor-data-4] | 지연시간: 382ms  ← 스로틀 적용
+...
+[Processor] 처리 #50 | Event[id=50, payload=sensor-data-50] | 지연시간: 13188ms
+...
+[Processor] 처리 #100 | Event[id=100, payload=sensor-data-100] | 지연시간: 29857ms
+...
+[Processor] 처리 #104 | Event[id=104, payload=sensor-data-104] | 지연시간: 31188ms
+
+[Processor] === 처리 통계 === 총 처리: 104건 | 경과: 37초 | 실측 처리량: 2.8/sec
+
+========================================
+  Throttle 데모 종료
+========================================
+BUILD SUCCESSFUL in 46s
+```
+
+**검증**:
+- 150건 발행 → 버퍼 100 + 초기 3건 즉시 통과 + 약 1건 경합 = 104건 처리 (46건 드롭)
+- 실측 처리량 2.8/sec (설정 3건/초에 근접)
+- 지연시간이 42ms → 31,188ms로 점진적 증가: 스로틀에 의한 큐잉 효과 확인
+- `Source.actorRef` + `throttle` + `Sink.actorRef` 파이프라인 정상 동작
+
+---
+
+## sample9 — C# Akka.NET Streams Throttle
+
+**컨셉**: Akka.Streams 기반 스로틀 파이프라인. `Source.ActorRef` → `Throttle(3/sec)` → `Sink.ActorRef(EventProcessorActor)` 구조. 2단계 시나리오: 시나리오 1은 소량(5건) 처리, 시나리오 2는 대량 버스트(150건)로 버퍼 초과 및 DropNew 전략을 시연.
+
+**실행**: `dotnet run`
+
+```
+========================================
+ Akka.NET Streams Throttle 데모
+ 처리속도: 3건/초 | 버퍼: 100 | 오버플로우: DropNew
+========================================
+
+[시나리오 1] 5건 이벤트 발행 → 스로틀이 초당 3건씩 처리
+[Producer] 이벤트 대량 생성 완료 - 발행=5건
+[Processor] EventId=1, Payload="Event-0001", 대기시간=55ms
+[Processor] EventId=2, Payload="Event-0002", 대기시간=55ms
+[Processor] EventId=3, Payload="Event-0003", 대기시간=55ms  ← 첫 3건 즉시 통과
+[Processor] EventId=4, Payload="Event-0004", 대기시간=399ms ← 스로틀 적용
+[Processor] EventId=5, Payload="Event-0005", 대기시간=719ms
+
+--- 시나리오 1 완료 ---
+
+[시나리오 2] 150건 이벤트 발행 → 버퍼(100) 초과 시 DropNew 전략으로 드롭
+[Producer] 이벤트 대량 생성 완료 - 발행=150건
+[Throttle] 이벤트 수신 → 스로틀러 전달 - EventId=10, 누적수신=10건
+[Throttle] 이벤트 수신 → 스로틀러 전달 - EventId=150, 누적수신=150건
+[Processor] EventId=6, Payload="Event-0006", 대기시간=576ms
+...
+[Processor] EventId=49, Payload="Event-0049", 대기시간=14907ms
+→ 15초 관찰 후 총 49건 처리 (시나리오1 포함, 3건/초 × 15초 ≈ 44건 + 시나리오1 5건)
+
+========================================
+ 데모 종료
+ 스로틀이 초당 3건으로 처리를 제한했으며,
+ 버퍼(100) 초과 이벤트는 드롭되었습니다.
+========================================
+```
+
+**검증**:
+- 시나리오 1: 5건 → 전량 처리 (버퍼 내), 첫 3건 즉시 통과 후 나머지 ~333ms 간격 스로틀
+- 시나리오 2: 150건 버스트 → 15초 관찰 동안 44건 추가 처리 (3건/초 일치)
+- 대기시간 55ms → 14,907ms로 점진적 증가: 큐잉 효과 확인
+- `Source.ActorRef` + `Throttle` + `Sink.ActorRef` 파이프라인 정상 동작
+
+---
+
 ## 크로스 플랫폼 비교 요약
 
-| 항목 | sample1/4 (Kotlin Pekko) | sample2/5 (Java Akka) | sample3/6 (C# Akka.NET) |
-|------|-------------------------|----------------------|------------------------|
+### Hello World (sample1/2/3) & Router (sample4/5/6)
+
+| 항목 | Kotlin Pekko Typed | Java Akka Classic | C# Akka.NET |
+|------|-------------------|-------------------|-------------|
 | 액터 베이스 | `AbstractBehavior<T>` | `AbstractActor` | `ReceiveActor` |
 | 메시지 정의 | `sealed class` 계층 | 내부 불변 클래스 | `record` |
 | 응답 패턴 | `replyTo: ActorRef<T>` 명시적 | `getSender()` 암묵적 | `Sender.Tell()` 암묵적 |
@@ -222,3 +361,16 @@
 | Broadcast | 커스텀 액터 구현 필요 | `BroadcastPool` 내장 | `BroadcastPool` 내장 |
 | ConsistentHash | `ConsistentHashing` 키 매핑 | `ConsistentHashable` 인터페이스 | `IConsistentHashable` 인터페이스 |
 | 빌드 | Gradle (Kotlin DSL) | Gradle (Groovy) | dotnet CLI |
+
+### Streams Throttle (sample7/8/9)
+
+| 항목 | sample7 (Kotlin Pekko) | sample8 (Java Akka) | sample9 (C# Akka.NET) |
+|------|----------------------|---------------------|----------------------|
+| Streams API | `Source.queue` + `throttle` | `Source.actorRef` + `throttle` | `Source.ActorRef` + `Throttle` |
+| 오버플로우 전략 | `OverflowStrategy.dropNew()` | `OverflowStrategy.dropNew()` | `OverflowStrategy.DropNew` |
+| 버퍼 크기 | 100 | 100 | 100 |
+| 스로틀 속도 | 3건/초 | 3건/초 | 3건/초 |
+| 버스트 테스트 | 150건 → 71건 드롭 | 150건 → 46건 드롭 | 150건 → 관찰 시간 내 49건 처리 |
+| 실측 처리량 | ~3건/초 | 2.8건/초 | ~3건/초 |
+| 실행 시간 | 24초 | 46초 (전량 처리) | 15초 (관찰 후 종료) |
+| 데모 구조 | 3페이즈(정상→버스트→통계) | 단일 버스트 + 완전 소진 | 2시나리오(소량→대량) |
