@@ -13,6 +13,34 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 | C# Akka.NET | `/dotnet-akka-net` | C# + Akka.NET 1.5.x |
 | AI Agent Pipeline | `/actor-ai-agent` | C# + Akka.NET + LLM |
 
+## 설치 방법
+
+### 방법 1: 플러그인 마켓플레이스로 설치 (권장)
+
+Claude Code에서 아래 명령어를 순서대로 실행합니다.
+
+```shell
+# 1. 마켓플레이스 등록
+/plugin marketplace add psmon/skill-actor-model
+
+# 2. 플러그인 설치
+/plugin install skill-actor-model@actor-model-skills
+```
+
+설치 후 `/java-akka-classic`, `/kotlin-pekko-typed`, `/dotnet-akka-net`, `/actor-ai-agent` 명령어를 사용할 수 있습니다.
+
+> 플러그인을 최신 버전으로 업데이트하려면: `/plugin marketplace update`
+
+### 방법 2: Git 저장소 클론 (로컬 개발용)
+
+저장소를 클론하면 `.claude/skills/` 디렉토리의 스킬이 자동으로 인식됩니다.
+
+```bash
+git clone https://github.com/psmon/skill-actor-model.git
+cd skill-actor-model
+claude   # 스킬이 자동 로드됩니다
+```
+
 ## 사용 방법
 
 Claude Code에서 슬래시 명령어로 원하는 플랫폼의 액터 패턴 코드를 생성합니다.
@@ -24,13 +52,29 @@ Claude Code에서 슬래시 명령어로 원하는 플랫폼의 액터 패턴 �
 /actor-ai-agent RAG 기반 질의분석 -> 검색 -> 평가 -> 응답 파이프라인 설계
 ```
 
+플러그인으로 설치한 경우 네임스페이스가 붙습니다.
+
+```
+/skill-actor-model:java-akka-classic RoundRobinPool 라우터
+/skill-actor-model:dotnet-akka-net ReceiveActor 기본 패턴
+```
+
 자연어로 질문해도 관련 스킬이 자동 활성화됩니다.
 
 ## 프로젝트 구조
 
 ```
 skill-actor-model/
-├── .claude/skills/                    # Claude Code 스킬 정의
+├── .claude-plugin/
+│   └── marketplace.json               # 플러그인 마켓플레이스 카탈로그
+├── plugins/skill-actor-model/         # 플러그인 배포용
+│   ├── .claude-plugin/plugin.json
+│   └── skills/                        # 배포되는 스킬
+│       ├── java-akka-classic/SKILL.md
+│       ├── kotlin-pekko-typed/SKILL.md
+│       ├── dotnet-akka-net/SKILL.md
+│       └── actor-ai-agent/SKILL.md
+├── .claude/skills/                    # 로컬 개발용 스킬 (동일 내용)
 │   ├── java-akka-classic/SKILL.md
 │   ├── kotlin-pekko-typed/SKILL.md
 │   ├── dotnet-akka-net/SKILL.md

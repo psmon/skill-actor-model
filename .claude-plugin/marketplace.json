@@ -1,0 +1,28 @@
+{
+  "name": "actor-model-skills",
+  "owner": {
+    "name": "psmon",
+    "email": "psmon@live.co.kr"
+  },
+  "metadata": {
+    "description": "Actor Model skills for Java Akka Classic, Kotlin Pekko Typed, C# Akka.NET, and AI Agent Pipeline",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "skill-actor-model",
+      "source": "./plugins/skill-actor-model",
+      "description": "Actor Model code generation skills for Java, Kotlin, C# and AI Agent",
+      "version": "1.0.0",
+      "author": {
+        "name": "psmon"
+      },
+      "homepage": "https://github.com/psmon/skill-actor-model",
+      "repository": "https://github.com/psmon/skill-actor-model",
+      "license": "MIT",
+      "keywords": ["actor-model", "akka", "akka-net", "pekko", "ai-agent"],
+      "category": "code-generation",
+      "tags": ["java", "kotlin", "csharp", "actor", "concurrency"]
+    }
+  ]
+}

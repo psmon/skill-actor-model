@@ -1,0 +1,5 @@
+{
+  "name": "skill-actor-model",
+  "description": "Actor Model code generation skills for Java Akka Classic, Kotlin Pekko Typed, C# Akka.NET, and AI Agent Pipeline",
+  "version": "1.0.0"
+}
