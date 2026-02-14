@@ -1,6 +1,6 @@
 ---
 name: java-akka-classic
-description: Java + Akka Classic 액터 모델 코드를 생성합니다. Java로 Akka Classic 기반 액터를 구현하거나, AbstractActor 패턴, 라우팅, 타이머, 배치처리, 스트림, 클러스터 등 Akka Classic 패턴을 작성할 때 사용합니다.
+description: Java + Akka Classic 액터 모델 코드를 생성합니다. Java로 Akka Classic 기반 액터를 구현하거나, AbstractActor 패턴, 라우팅, 타이머, 배치처리, 스트림, 영속화, 클러스터 등 Akka Classic 패턴을 작성할 때 사용합니다.
 argument-hint: "[패턴명] [요구사항]"
 ---
 
@@ -21,6 +21,7 @@ Java + Akka Classic(2.7.x) 기반의 액터 모델 코드를 생성하는 스킬
 - **빌드**: Gradle / Maven
 - **웹 프레임워크**: Spring Boot 2.7.x
 - **라이선스**: BSL (Business Source License)
+- **주요 패키지**: akka-actor, akka-persistence, akka-persistence-jdbc, sqlite-jdbc
 
 ## 지원 패턴
 
@@ -337,28 +338,87 @@ source.via(backpressureFlow)
 | `dropBuffer()` | 버퍼를 비우고 새 요소만 유지 |
 | `fail()` | 버퍼가 가득 차면 스트림 실패 |
 
-### 7. 클러스터 (Cluster)
+### 7. Persistence (SQLite + akka-persistence-jdbc)
+- `AbstractPersistentActor` 상속 + `persistenceId()` 필수
+- `persist(event, handler)` / `createReceiveRecover()` 이벤트 소싱
+- `SnapshotOffer` + `saveSnapshot()` 스냅샷 복구/저장
+- SQLite를 사용할 경우 앱 시작 시 `event_journal`, `event_tag`, `snapshot` 스키마를 선생성
+- HOCON에서 `jdbc-journal` / `jdbc-snapshot-store`를 같은 shared-db(`slick`)로 연결
+
+```java
+public class PersistentCounterActor extends AbstractPersistentActor {
+    private int counter = 0;
+    private long eventCount = 0;
+    private final String persistenceId;
+
+    @Override
+    public String persistenceId() { return persistenceId; }
+
+    @Override
+    public Receive createReceiveRecover() {
+        return receiveBuilder()
+            .match(CounterIncremented.class, this::applyEvent)
+            .match(SnapshotOffer.class, offer -> {
+                CounterState snap = (CounterState) offer.snapshot();
+                counter = snap.counter(); eventCount = snap.eventCount();
+            })
+            .build();
+    }
+
+    @Override
+    public Receive createReceive() {
+        return receiveBuilder()
+            .match(Increment.class, cmd -> {
+                persist(new CounterIncremented(cmd.amount()), e -> {
+                    applyEvent(e);
+                    if (lastSequenceNr() % 5 == 0) saveSnapshot(new CounterState(counter, eventCount));
+                });
+            })
+            .build();
+    }
+}
+```
+
+```hocon
+akka.persistence.journal.plugin = "jdbc-journal"
+akka.persistence.snapshot-store.plugin = "jdbc-snapshot-store"
+
+jdbc-journal { use-shared-db = "slick" }
+jdbc-snapshot-store { use-shared-db = "slick" }
+
+akka-persistence-jdbc.shared-databases.slick {
+  profile = "slick.jdbc.SQLiteProfile$"
+  db {
+    url = "jdbc:sqlite:sample11-data/akka-persistence.db"
+    driver = "org.sqlite.JDBC"
+    connectionPool = disabled
+    keepAliveConnection = on
+  }
+}
+```
+
+### 8. 클러스터 (Cluster)
 - `ClusterListener`: MemberUp, UnreachableMember, MemberRemoved 이벤트 감시
 - `ClusterRouterPool`: 멀티 노드 라우팅
 - 역할(role) 기반 분산 처리
 - HOCON `seed-nodes`, `auto-down` 설정
 
-### 8. 생명주기 & 종료
+### 9. 생명주기 & 종료
 - `preStart()`, `postStop()`, `preRestart()`, `postRestart()`
 - `PoisonPill` vs `context().stop()` vs `Kill`
 - `CoordinatedShutdown`: 단계별 graceful shutdown
 
-### 9. 테스트 (TestKit)
+### 10. 테스트 (TestKit)
 - `TestKit` 익명 클래스 패턴
 - `expectMsg()`, `expectMsgClass()`, `expectNoMessage()`, `within()`
 - `getRef()` 로 TestKit 자체를 sender로 사용
 
-### 10. Spring Boot 통합
+### 11. Spring Boot 통합
 - `@Configuration` + `@Bean`으로 ActorSystem 관리
 - `@PostConstruct` / `@PreDestroy` 라이프사이클
 - `AkkaManager` 싱글턴 패턴
 
-### 11. Dispatcher 설정
+### 12. Dispatcher 설정
 - Dispatcher는 액터에 스레드를 할당하는 핵심 구성 요소
 - CPU-bound는 `fork-join-executor`, I/O-bound는 `thread-pool-executor` 사용
 

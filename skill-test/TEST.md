@@ -70,6 +70,36 @@ skill-test/projects/sample9 하위폴터에 프로젝트 생성, 생성후 실�
 스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
 ```
 
+-- Codex 실험
+- skill-maker 클코드 스킬을 Codex 등록요청
+- Codex의 스킬은 슬래쉬를빼고 요청가능
+
+## 4. Persistence
+
+DOC : https://getakka.net/articles/persistence/architecture.html
+
+### Kottlin Pekko Typed
+```
+/kotlin-pekko-typed 액터는 인메모리 처리되어 알수없는 종료후 재구동시 복원처리가 안됩니다. 퍼시던트 sqllite를 이용해 액터이벤트가 영속성될수 있도록 작성  \
+skill-test/projects/sample10 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
+
+### Java Akka Classic
+```
+/java-akka-classic 액터는 인메모리 처리되어 알수없는 종료후 재구동시 복원처리가 안됩니다. 퍼시던트 sqllite를 이용해 액터이벤트가 영속성될수 있도록 작성  \
+skill-test/projects/sample11 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
+
+### C# Akka.NET
+```
+/dotnet-akka-net 액터는 인메모리 처리되어 알수없는 종료후 재구동시 복원처리가 안됩니다. 퍼시던트 sqllite를 이용해 액터이벤트가 영속성될수 있도록 작성  \
+skill-test/projects/sample12 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
+
+
 
 ## 테스트 문서 
 - skill-test/projects 하위 프로젝트들을 수행해 작동결과를 skill-test/TEST-RESULT.md 에 기록및 업데이트
@@ -82,7 +112,7 @@ skill-test/projects/sample9 하위폴터에 프로젝트 생성, 생성후 실�
 
 ### 스킬업데이트 전체지침
 - skill-test/projects 생성된 하위 프로젝트 코드를 참고해 스킬에 더욱 다양한 액터모델 패턴을 반영해 스킬을 개선합니다.
-  - sample7 ~ sample9 생성된코드로 한정참조합니다. (나머지는 반영완료됨) 
+  - sample10 ~ sample12 생성된코드로 한정참조합니다. (나머지는 반영완료됨) 
   - skill-maker/Skill-MarketPlace.md : 스킬 플러그인을 관리하는 방법을 먼저참고합니다.
   - plugins : 스킬구성된 플로그인 경로입니다.
   - 기존 스킬을 참고해 개선합니다. 중복인경우 업데이트를 하지 않습니다.

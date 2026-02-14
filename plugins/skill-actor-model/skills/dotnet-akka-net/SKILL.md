@@ -1,6 +1,6 @@
 ---
 name: dotnet-akka-net
-description: C# + Akka.NET 액터 모델 코드를 생성합니다. C#으로 Akka.NET 기반 액터를 구현하거나, ReceiveActor, FSM 배치처리, 라우팅, Dispatcher, Mailbox, Persistence(RavenDB), Streams Throttle, SSE, Remote, MCP Server 등 Akka.NET 패턴을 작성할 때 사용합니다.
+description: C# + Akka.NET 액터 모델 코드를 생성합니다. C#으로 Akka.NET 기반 액터를 구현하거나, ReceiveActor, FSM 배치처리, 라우팅, Dispatcher, Mailbox, Persistence(RavenDB/SQLite), Streams Throttle, SSE, Remote, MCP Server 등 Akka.NET 패턴을 작성할 때 사용합니다.
 argument-hint: "[패턴명] [요구사항]"
 ---
 
@@ -20,7 +20,7 @@ C# + Akka.NET(1.5.x) 기반의 액터 모델 코드를 생성하는 스킬입니
 - **언어**: C# (.NET 9.0)
 - **웹 프레임워크**: ASP.NET Core
 - **라이선스**: Apache License 2.0
-- **주요 패키지**: Akka, Akka.Remote, Akka.Streams, Akka.DependencyInjection, Akka.Persistence.RavenDB
+- **주요 패키지**: Akka, Akka.Remote, Akka.Streams, Akka.DependencyInjection, Akka.Persistence, Akka.Persistence.RavenDB, Akka.Persistence.Sqlite
 
 ## 지원 패턴
 
@@ -403,7 +403,7 @@ public class CounselorsActor : UntypedActor
 | 상태 데이터 | 필드 직접 관리 | `Using(data)` DSL |
 | 전이 콜백 | 없음 | `OnTransition()` 내장 |
 
-### 9. Persistence (RavenDB)
+### 9. Persistence (RavenDB / SQLite)
 - `ReceivePersistentActor` 상속, `PersistenceId` 필수
 - **이벤트 소싱**: `Persist(event, handler)` + `Recover<T>(handler)`
 - **스냅샷**: `SaveSnapshot(state)`, N개 이벤트마다 자동 스냅샷
@@ -432,6 +432,61 @@ public class SalesActor : ReceivePersistentActor
     }
 }
 ```
+
+#### SQLite 저널/스냅샷 (로컬 파일 기반)
+
+- `Akka.Persistence.Sqlite` 패키지 사용
+- `akka.persistence.journal.sqlite` / `akka.persistence.snapshot-store.sqlite` 플러그인 지정
+- `auto-initialize = on`으로 SQLite 테이블 자동 생성
+- `ReceivePersistentActor` 코드는 동일, HOCON만 SQLite로 교체 가능
+
+```csharp
+var hocon = @"
+akka.persistence.journal.plugin = ""akka.persistence.journal.sqlite""
+akka.persistence.snapshot-store.plugin = ""akka.persistence.snapshot-store.sqlite""
+
+akka.persistence.journal.sqlite {
+  class = ""Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite""
+  plugin-dispatcher = ""akka.actor.default-dispatcher""
+  connection-string = ""Filename=sample12-data/akka-persistence.db;Mode=ReadWriteCreate""
+  auto-initialize = on
+}
+
+akka.persistence.snapshot-store.sqlite {
+  class = ""Akka.Persistence.Sqlite.Snapshot.SqliteSnapshotStore, Akka.Persistence.Sqlite""
+  plugin-dispatcher = ""akka.actor.default-dispatcher""
+  connection-string = ""Filename=sample12-data/akka-persistence.db;Mode=ReadWriteCreate""
+  auto-initialize = on
+}";
+```
+
+```csharp
+public sealed class PersistentCounterActor : ReceivePersistentActor
+{
+    public override string PersistenceId => "sample12-counter-1";
+    private int _value;
+    private long _eventCount;
+
+    public PersistentCounterActor()
+    {
+        Command<IncrementCounter>(cmd =>
+            Persist(new CounterIncremented(cmd.Amount), ev =>
+            {
+                _value += ev.Amount;
+                _eventCount++;
+                if (LastSequenceNr % 5 == 0) SaveSnapshot(new CounterSnapshot(_value, _eventCount));
+            }));
+
+        Recover<CounterIncremented>(ev => { _value += ev.Amount; _eventCount++; });
+        Recover<SnapshotOffer>(offer =>
+        {
+            if (offer.Snapshot is CounterSnapshot snap) { _value = snap.Value; _eventCount = snap.EventCount; }
+        });
+    }
+}
+```
+
+> 재기동 검증 팁: 동일 `PersistenceId`로 ActorSystem을 두 번 순차 실행하면, 2차 실행 시작 시 `RecoveryCompleted` 로그의 `LastSequenceNr`가 증가해 있어야 합니다.
 
 ### 10. SSE (Server-Sent Events) + PipeTo 패턴
 - SSEUserActor: 알림 큐 관리

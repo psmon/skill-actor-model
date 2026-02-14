@@ -15,6 +15,9 @@
 | 7 | sample7 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | N/A |
 | 8 | sample8 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | N/A |
 | 9 | sample9 | C# + Akka.NET 1.5.40 | `/dotnet-akka-net` | PASS | N/A |
+| 10 | sample10 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | N/A |
+| 11 | sample11 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | N/A |
+| 12 | sample12 | C# + Akka.NET 1.5.25 | `/dotnet-akka-net` | PASS | N/A |
 
 ---
 
@@ -348,6 +351,92 @@ BUILD SUCCESSFUL in 46s
 
 ---
 
+## sample10 — Kotlin Pekko Typed SQLite Event Store
+
+**컨셉**: Pekko Typed 액터가 인메모리 상태 대신 SQLite(`actor_events` 테이블)에 이벤트를 직접 append하고, 재시작 시 `SELECT ... ORDER BY seq_nr` replay로 상태를 복구한다. `DurableStateBehavior` 대신 커스텀 이벤트 스토어 패턴.
+
+**실행**: `./gradlew run`
+
+```
+00:41:35.628 ... Pekko Typed + SQLite 이벤트 영속 데모
+00:41:35.628 ... DB 파일: /mnt/d/Code/Webnori/skill-actor-model/skill-test/projects/sample10/sample10-data/actor-events.db
+00:41:35.652 ... [복구 완료] persistenceId=counter-1, recoveredEvents=6, value=24, lastSeqNr=6
+00:41:35.660 ... [STATE] value=24, eventCount=6, lastSeqNr=6
+00:41:35.686 ... [이벤트 저장] persistenceId=counter-1, seqNr=7, amount=+3, currentValue=27
+00:41:35.687 ... [ACK] persistenceId=counter-1, seqNr=7, currentValue=27
+00:41:35.708 ... [이벤트 저장] persistenceId=counter-1, seqNr=8, amount=+5, currentValue=32
+00:41:35.708 ... [STATE] value=32, eventCount=8, lastSeqNr=8
+00:41:36.695 ... [종료] ActorSystem 종료
+BUILD SUCCESSFUL
+```
+
+**검증**:
+- 시작 시점에 기존 이벤트 6건을 로드해 `value=24`로 복구
+- 신규 이벤트 2건 저장 후 `seqNr=8`, `value=32`로 증가
+- SQLite 파일 기반 영속 상태가 재실행 간 유지됨 확인
+
+---
+
+## sample11 — Java Akka Classic Persistence JDBC + SQLite
+
+**컨셉**: `AbstractPersistentActor` + `akka-persistence-jdbc` 조합으로 SQLite 저널/스냅샷 영속화를 수행한다. 시작 시 스키마(`event_journal`, `event_tag`, `snapshot`)를 초기화하고 이벤트 replay로 복구.
+
+**실행**: `./gradlew run`
+
+```
+Akka Classic + SQLite Persistence 데모
+DB 파일: skill-test/projects/sample11/sample11-data/akka-persistence.db
+00:41:35.243 ... [복구 완료] persistenceId=counter-1, counter=16, eventCount=4, lastSequenceNr=4
+[시작 상태] counter=16, eventCount=4, lastSeqNr=4
+00:41:35.432 ... [이벤트 저장] persistenceId=counter-1, seqNr=5, amount=+3, currentValue=19
+[ACK] persistenceId=counter-1, seqNr=5, currentValue=19
+00:41:35.498 ... [이벤트 저장] persistenceId=counter-1, seqNr=6, amount=+5, currentValue=24
+[ACK] persistenceId=counter-1, seqNr=6, currentValue=24
+[종료 직전 상태] counter=24, eventCount=6, lastSeqNr=6
+00:41:35.521 ... [스냅샷 저장] sequenceNr=5
+BUILD SUCCESSFUL
+```
+
+**검증**:
+- 기존 상태(`counter=16`)를 이벤트 replay로 복원
+- 2건 persist 후 `lastSeqNr=6`, `counter=24`로 정상 증가
+- 5번째 시퀀스에서 스냅샷 저장 로그 확인
+
+---
+
+## sample12 — C# Akka.NET Persistence Sqlite
+
+**컨셉**: `ReceivePersistentActor` + `Akka.Persistence.Sqlite`로 이벤트 저널/스냅샷을 로컬 SQLite 파일에 저장한다. 단일 실행 내에서 ActorSystem을 2회 순차 기동해 재기동 복구를 즉시 시연.
+
+**실행**: `dotnet run`
+
+```
+Akka.NET + SQLite Persistence 데모
+DB 파일: /mnt/d/Code/Webnori/skill-actor-model/skill-test/projects/sample12/sample12-data/akka-persistence.db
+
+--- 1차 실행 ---
+[복구 완료] pid=sample12-counter-1, value=16, eventCount=4, lastSeqNr=4
+[시작 상태] value=16, eventCount=4, lastSeqNr=4
+[이벤트 저장] pid=sample12-counter-1, seqNr=5, amount=+3, currentValue=19
+[이벤트 저장] pid=sample12-counter-1, seqNr=6, amount=+5, currentValue=24
+[종료 직전 상태] value=24, eventCount=6, lastSeqNr=6
+[스냅샷 복구] pid=sample12-counter-1, value=19, eventCount=5
+
+--- 2차 실행(재기동) ---
+[복구 완료] pid=sample12-counter-1, value=24, eventCount=6, lastSeqNr=6
+[시작 상태] value=24, eventCount=6, lastSeqNr=6
+[이벤트 저장] pid=sample12-counter-1, seqNr=7, amount=+3, currentValue=27
+[이벤트 저장] pid=sample12-counter-1, seqNr=8, amount=+5, currentValue=32
+[종료 직전 상태] value=32, eventCount=8, lastSeqNr=8
+```
+
+**검증**:
+- 1차 종료 상태(`value=24`)가 2차 시작 복구 상태와 동일
+- 2차에서 `seqNr=7,8`로 연속 증가해 이벤트 저널 연속성 확인
+- SnapshotOffer 기반 스냅샷 복구 로그 확인
+
+---
+
 ## 크로스 플랫폼 비교 요약
 
 ### Hello World (sample1/2/3) & Router (sample4/5/6)
@@ -374,3 +463,15 @@ BUILD SUCCESSFUL in 46s
 | 실측 처리량 | ~3건/초 | 2.8건/초 | ~3건/초 |
 | 실행 시간 | 24초 | 46초 (전량 처리) | 15초 (관찰 후 종료) |
 | 데모 구조 | 3페이즈(정상→버스트→통계) | 단일 버스트 + 완전 소진 | 2시나리오(소량→대량) |
+
+### Persistence SQLite (sample10/11/12)
+
+| 항목 | sample10 (Kotlin Pekko) | sample11 (Java Akka) | sample12 (C# Akka.NET) |
+|------|-------------------------|----------------------|------------------------|
+| 영속 방식 | 커스텀 이벤트 저장소(JDBC 직접) | Akka Persistence JDBC | Akka.Persistence.Sqlite |
+| 액터 베이스 | `Behavior<T>` (Typed) | `AbstractPersistentActor` | `ReceivePersistentActor` |
+| 이벤트 저장 | 수동 INSERT + 트랜잭션 | `persist()` | `Persist()` |
+| 복구 방식 | 시작 시 replay (`SELECT ... ORDER BY`) | `createReceiveRecover()` replay | `Recover<T>()` replay |
+| 스냅샷 | 미사용 | `saveSnapshot()` | `SaveSnapshot()` |
+| DB 파일 | `sample10-data/actor-events.db` | `sample11-data/akka-persistence.db` | `sample12-data/akka-persistence.db` |
+| 검증 포인트 | seqNr 6→8 증가 | lastSeqNr 4→6 증가 | 1차/2차 재기동에서 seqNr 4→8 증가 |

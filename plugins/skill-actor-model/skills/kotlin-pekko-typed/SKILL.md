@@ -361,6 +361,87 @@ private fun onSaveState(message: SavaState): Behavior<HelloStashCommand> {
 
 > `pipeToSelf`는 비동기 작업 결과를 자신에게 메시지로 전달하여 액터의 단일 스레드 보장을 유지합니다. Stash 패턴과 결합하면 저장 중 메시지를 버퍼링할 수 있습니다.
 
+#### SQLite 직접 이벤트 저장 (로컬 단일 노드)
+
+`DurableStateBehavior`를 사용하지 않고, SQLite(JDBC)에 이벤트를 직접 append하고 시작 시 replay로 상태를 복원하는 패턴:
+
+```kotlin
+data class CounterIncrementedEvent(val seqNr: Long, val amount: Int, val createdAt: Instant)
+
+class SqliteEventStore(private val dbUrl: String) {
+    init {
+        DriverManager.getConnection(dbUrl).use { conn ->
+            conn.createStatement().executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS actor_events (
+                  persistence_id TEXT NOT NULL,
+                  seq_nr INTEGER NOT NULL,
+                  event_type TEXT NOT NULL,
+                  amount INTEGER NOT NULL,
+                  created_at TEXT NOT NULL,
+                  PRIMARY KEY (persistence_id, seq_nr)
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
+    fun loadEvents(persistenceId: String): List<CounterIncrementedEvent> = TODO()
+
+    fun appendIncrementedEvent(persistenceId: String, amount: Int): CounterIncrementedEvent {
+        DriverManager.getConnection(dbUrl).use { conn ->
+            conn.autoCommit = false
+            try {
+                val nextSeq = nextSequence(conn, persistenceId) // MAX(seq_nr)+1
+                // INSERT ... COMMIT
+                conn.commit()
+                return CounterIncrementedEvent(nextSeq, amount, Instant.now())
+            } catch (ex: Exception) {
+                conn.rollback()
+                throw ex
+            } finally {
+                conn.autoCommit = true
+            }
+        }
+    }
+}
+
+object PersistentCounterActor {
+    fun create(persistenceId: String, store: SqliteEventStore): Behavior<CounterCommand> =
+        Behaviors.setup { context ->
+            val events = store.loadEvents(persistenceId)
+            var state = CounterState(
+                value = events.sumOf { it.amount },
+                lastSeqNr = events.lastOrNull()?.seqNr ?: 0L,
+                eventCount = events.size
+            )
+            context.log.info("[복구 완료] pid={}, value={}, lastSeqNr={}", persistenceId, state.value, state.lastSeqNr)
+            Behaviors.receiveMessage { cmd ->
+                when (cmd) {
+                    is IncrementCounter -> {
+                        val ev = store.appendIncrementedEvent(persistenceId, cmd.amount)
+                        state = state.copy(
+                            value = state.value + ev.amount,
+                            lastSeqNr = ev.seqNr,
+                            eventCount = state.eventCount + 1
+                        )
+                        cmd.replyTo.tell(CounterAck(persistenceId, ev.seqNr, state.value))
+                        Behaviors.same()
+                    }
+                    is GetCounterState -> { cmd.replyTo.tell(state); Behaviors.same() }
+                }
+            }
+        }
+}
+```
+
+| 항목 | 권장 구현 |
+|------|-----------|
+| 재기동 복구 | `SELECT ... ORDER BY seq_nr ASC`로 replay |
+| 순번 생성 | `MAX(seq_nr)+1`를 트랜잭션 안에서 계산 |
+| 원자성 | `autoCommit=false` + `commit/rollback` |
+| 적용 대상 | 단일 노드/로컬 개발용 경량 영속화 |
+
 ### 7. Stash 패턴
 - 비동기 초기화 중 메시지를 버퍼링
 - `Behaviors.withStash(capacity) { stash -> }` 래핑
