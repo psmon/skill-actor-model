@@ -672,6 +672,39 @@ class GraphActor private constructor(
 }
 ```
 
+#### WorkingWithGraph (Broadcast + Merge)
+
+`Source(Random 1~100)`를 `Broadcast(2)`로 분기하고 fan1(`+2`), fan2(`+10`) 처리 후 `Merge(2)`로 합치는 패턴:
+
+```kotlin
+val source = Source.from((1..8).map { Random.nextInt(1, 101) })
+val sink = Sink.foreach<Int> { out -> println("[Out] merged=$out") }
+
+val graph = RunnableGraph.fromGraph(
+    GraphDSL.create(sink) { builder, out ->
+        val src = builder.add(source)
+        val bcast = builder.add(Broadcast.create<Int>(2))
+        val merge = builder.add(Merge.create<Int>(2))
+        val fan1 = builder.add(Flow.of(Int::class.java).map { n -> n + 2 })
+        val fan2 = builder.add(Flow.of(Int::class.java).map { n -> n + 10 })
+
+        builder.from(src).toInlet(bcast.`in`())
+        builder.from(bcast.out(0)).via(fan1).toInlet(merge.`in`(0))
+        builder.from(bcast.out(1)).via(fan2).toInlet(merge.`in`(1))
+        builder.from(merge.out()).to(out)
+        ClosedShape.getInstance()
+    }
+)
+graph.run(materializer)
+```
+
+| 구성요소 | 역할 |
+|---------|------|
+| `Broadcast(2)` | 입력 1건을 두 분기(fan1/fan2)로 복제 |
+| `fan1` | `src + 2` 변환 |
+| `fan2` | `src + 10` 변환 |
+| `Merge(2)` | 두 분기 결과를 단일 출력으로 병합 |
+
 #### Queue 기반 Throttle (Source.queue)
 
 `Source.queue()`로 큐를 생성하고 `QueueOfferResult`로 오버플로우를 감지하는 패턴입니다.

@@ -99,6 +99,30 @@ skill-test/projects/sample12 하위폴터에 프로젝트 생성, 생성후 실�
 스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
 ```
 
+## 4. workingwithgraphs
+
+DOC : https://getakka.net/articles/streams/workingwithgraphs.html
+
+### Kottlin Pekko Typed
+```
+/kotlin-pekko-typed AkkaStream의 WorkingWithGraph컨셉 구현,소스(랜덤 1~100)-> 분기 (fan1: src+2,fan2: src+10) -> 머지(fan1+fan2) -> Out(printf)  \
+skill-test/projects/sample13 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
+
+### Java Akka Classic
+```
+/java-akka-classic AkkaStream의 WorkingWithGraph컨셉 구현,소스(랜덤 1~100)-> 분기 (fan1: src+2,fan2: src+10) -> 머지(fan1+fan2) -> Out(printf)  \
+skill-test/projects/sample14 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
+
+### C# Akka.NET
+```
+/dotnet-akka-net AkkaStream의 WorkingWithGraph컨셉 구현,소스(랜덤 1~100)-> 분기 (fan1: src+2,fan2: src+10) -> 머지(fan1+fan2) -> Out(printf)  \
+skill-test/projects/sample15 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
 
 
 ## 테스트 문서 
@@ -112,7 +136,7 @@ skill-test/projects/sample12 하위폴터에 프로젝트 생성, 생성후 실�
 
 ### 스킬업데이트 전체지침
 - skill-test/projects 생성된 하위 프로젝트 코드를 참고해 스킬에 더욱 다양한 액터모델 패턴을 반영해 스킬을 개선합니다.
-  - sample10 ~ sample12 생성된코드로 한정참조합니다. (나머지는 반영완료됨) 
+  - sample13 ~ sample16 생성된코드로 한정참조합니다. (나머지는 반영완료됨) 
   - skill-maker/Skill-MarketPlace.md : 스킬 플러그인을 관리하는 방법을 먼저참고합니다.
   - plugins : 스킬구성된 플로그인 경로입니다.
   - 기존 스킬을 참고해 개선합니다. 중복인경우 업데이트를 하지 않습니다.

@@ -327,6 +327,34 @@ source.via(backpressureFlow)
       .run(materializer);
 ```
 
+### 6-2. WorkingWithGraph (Broadcast + Merge)
+- `GraphDSL`로 fan-out/fan-in 그래프 구성
+- `Source(Random 1~100)` → `Broadcast(2)` → fan1(`+2`), fan2(`+10`) → `Merge(2)` → `Sink.foreach`
+
+```java
+Source<Integer, NotUsed> source = Source.from(randomValues);
+Flow<Integer, Integer, NotUsed> fan1 = Flow.of(Integer.class).map(n -> n + 2);
+Flow<Integer, Integer, NotUsed> fan2 = Flow.of(Integer.class).map(n -> n + 10);
+Sink<Integer, CompletionStage<Done>> sink = Sink.foreach(out -> System.out.println("[Out] " + out));
+
+RunnableGraph<CompletionStage<Done>> graph = RunnableGraph.fromGraph(
+    GraphDSL.create(sink, (builder, out) -> {
+        var src = builder.add(source);
+        var bcast = builder.add(Broadcast.<Integer>create(2));
+        var merge = builder.add(Merge.<Integer>create(2));
+        var f1 = builder.add(fan1);
+        var f2 = builder.add(fan2);
+
+        builder.from(src).viaFanOut(bcast);
+        builder.from(bcast.out(0)).via(f1).toFanIn(merge);
+        builder.from(bcast.out(1)).via(f2).toFanIn(merge);
+        builder.from(merge).to(out);
+        return ClosedShape.getInstance();
+    })
+);
+graph.run(materializer);
+```
+
 **OverflowStrategy 비교**:
 
 | 전략 | 설명 |

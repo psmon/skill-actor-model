@@ -18,6 +18,9 @@
 | 10 | sample10 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | N/A |
 | 11 | sample11 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | N/A |
 | 12 | sample12 | C# + Akka.NET 1.5.25 | `/dotnet-akka-net` | PASS | N/A |
+| 13 | sample13 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | N/A |
+| 14 | sample14 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | N/A |
+| 15 | sample15 | C# + Akka.NET 1.5.25 | `/dotnet-akka-net` | PASS | N/A |
 
 ---
 
@@ -437,6 +440,89 @@ DB 파일: /mnt/d/Code/Webnori/skill-actor-model/skill-test/projects/sample12/sa
 
 ---
 
+## sample13 — Kotlin Pekko Typed Streams WorkingWithGraph
+
+**컨셉**: Akka/Pekko Streams GraphDSL 패턴. `Source(Random 1~100)`를 `Broadcast(2)`로 분기해 fan1(`+2`) / fan2(`+10`) 변환 후 `Merge(2)`로 합치고 콘솔 출력으로 검증한다.
+
+**실행**: `./gradlew run`
+
+```
+Kotlin Pekko Typed - WorkingWithGraph 데모
+Source(Random 1~100) -> Broadcast(2) -> (+2, +10) -> Merge -> Out
+[Source] 입력 랜덤값: [18, 77, 34, 58, 82, 95, 82, 31]
+[Source] emit=18
+[Fan1] 18 + 2 = 20
+[Out] merged=20
+[Fan2] 18 + 10 = 28
+[Out] merged=28
+...
+[Out] merged=41
+Graph 실행 완료
+BUILD SUCCESSFUL
+```
+
+**검증**:
+- 각 입력값마다 fan1/fan2 두 경로가 모두 실행되어 출력 2건 생성
+- `Merge` 결과가 순차적으로 sink에 전달됨 확인
+- 유닛테스트 소스 없음(`N/A`)
+
+---
+
+## sample14 — Java Akka Classic Streams WorkingWithGraph
+
+**컨셉**: Akka Streams `GraphDSL`로 `Broadcast`/`Merge` 기반 fan-out/fan-in을 구현. 랜덤 정수 입력을 fan1(`+2`)과 fan2(`+10`)로 분기 처리 후 병합 출력한다.
+
+**실행**: `./gradlew run`
+
+```
+Java Akka Classic - WorkingWithGraph 데모
+Source(Random 1~100) -> Broadcast(2) -> (+2, +10) -> Merge -> Out
+[Source] 입력 랜덤값: [35, 24, 91, 68, 76, 16, 25, 68]
+[Source] emit=35
+[Fan1] 35 + 2 = 37
+[Out] merged=37
+[Fan2] 35 + 10 = 45
+[Out] merged=45
+...
+[Out] merged=78
+Graph 실행 완료
+BUILD SUCCESSFUL
+```
+
+**검증**:
+- 각 입력이 두 분기에서 각각 변환(+2, +10)되어 병합됨
+- `Broadcast<Integer>(2)`와 `Merge<Integer>(2)` 타입 지정으로 그래프 정상 동작
+- 유닛테스트 소스 없음(`N/A`)
+
+---
+
+## sample15 — C# Akka.NET Streams WorkingWithGraph
+
+**컨셉**: Akka.NET Streams `GraphDsl` 패턴으로 fan-out/fan-in 구성. `Source(Random)` -> `Broadcast(2)` -> fan1(`+2`), fan2(`+10`) -> `Merge(2)` -> `Sink.ForEach` 출력.
+
+**실행**: `dotnet run`
+
+```
+C# Akka.NET - WorkingWithGraph 데모
+Source(Random 1~100) -> Broadcast(2) -> (+2, +10) -> Merge -> Out
+[Source] 입력 랜덤값: [16, 53, 33, 7, 54, 6, 74, 41]
+[Source] emit=16
+[Fan1] 16 + 2 = 18
+[Out] merged=18
+[Fan2] 16 + 10 = 26
+[Out] merged=26
+...
+[Out] merged=51
+Graph 실행 완료
+```
+
+**검증**:
+- 분기 2개(fan1/fan2)와 병합 1개가 의도대로 작동
+- 출력이 입력 수의 2배로 생성되어 fan-out/fan-in 구조 확인
+- 유닛테스트 소스 없음(`N/A`)
+
+---
+
 ## 크로스 플랫폼 비교 요약
 
 ### Hello World (sample1/2/3) & Router (sample4/5/6)
@@ -475,3 +561,14 @@ DB 파일: /mnt/d/Code/Webnori/skill-actor-model/skill-test/projects/sample12/sa
 | 스냅샷 | 미사용 | `saveSnapshot()` | `SaveSnapshot()` |
 | DB 파일 | `sample10-data/actor-events.db` | `sample11-data/akka-persistence.db` | `sample12-data/akka-persistence.db` |
 | 검증 포인트 | seqNr 6→8 증가 | lastSeqNr 4→6 증가 | 1차/2차 재기동에서 seqNr 4→8 증가 |
+
+### WorkingWithGraph (sample13/14/15)
+
+| 항목 | sample13 (Kotlin Pekko) | sample14 (Java Akka) | sample15 (C# Akka.NET) |
+|------|--------------------------|----------------------|-------------------------|
+| Graph 구성 | `GraphDSL + Broadcast + Merge` | `GraphDSL + Broadcast + Merge` | `GraphDsl + Broadcast + Merge` |
+| Source | 랜덤 정수 8개 (`1..100`) | 랜덤 정수 8개 (`1..100`) | 랜덤 정수 8개 (`1..100`) |
+| fan1 | `n + 2` | `n + 2` | `n + 2` |
+| fan2 | `n + 10` | `n + 10` | `n + 10` |
+| Sink | `Sink.foreach` | `Sink.foreach` | `Sink.ForEach` |
+| 결과 검증 | 입력당 출력 2건 | 입력당 출력 2건 | 입력당 출력 2건 |

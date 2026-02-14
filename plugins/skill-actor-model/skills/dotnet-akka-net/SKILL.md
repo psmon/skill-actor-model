@@ -143,6 +143,33 @@ Receive<ChangeTPS>(msg =>
 });
 ```
 
+### 3-1. WorkingWithGraph (Broadcast + Merge)
+- `GraphDsl`로 fan-out/fan-in 그래프 구성
+- `Source(Random 1~100)` -> `Broadcast(2)` -> fan1(`+2`), fan2(`+10`) -> `Merge(2)` -> `Sink.ForEach`
+
+```csharp
+var sourceValues = Enumerable.Range(0, 8).Select(_ => rnd.Next(1, 101)).ToList();
+var sink = Sink.ForEach<int>(n => Console.WriteLine($"[Out] merged={n}"));
+
+var graph = RunnableGraph.FromGraph(GraphDsl.Create(builder =>
+{
+    var source = builder.Add(Source.From(sourceValues));
+    var bcast = builder.Add(new Broadcast<int>(2));
+    var merge = builder.Add(new Merge<int>(2));
+    var fan1 = builder.Add(Flow.Create<int>().Select(n => n + 2));
+    var fan2 = builder.Add(Flow.Create<int>().Select(n => n + 10));
+    var outSink = builder.Add(sink);
+
+    builder.From(source).To(bcast.In);
+    builder.From(bcast.Out(0)).Via(fan1).To(merge.In(0));
+    builder.From(bcast.Out(1)).Via(fan2).To(merge.In(1));
+    builder.From(merge.Out).To(outSink);
+    return ClosedShape.Instance;
+}));
+
+graph.Run(materializer);
+```
+
 ### 4. 타이머 기반 Throttle
 - `Context.System.Scheduler.ScheduleTellRepeatedly()` 스케줄러
 - 수동 큐 관리 + `maxBust` 파라미터
