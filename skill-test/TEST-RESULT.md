@@ -705,3 +705,33 @@ BUILD SUCCESSFUL
 | fan2 | `n + 10` | `n + 10` | `n + 10` |
 | Sink | `Sink.foreach` | `Sink.foreach` | `Sink.ForEach` |
 | 결과 검증 | 입력당 출력 2건 | 입력당 출력 2건 | 입력당 출력 2건 |
+
+---
+
+## sample19 — Kotlin Pekko Typed TestKit Hello/World
+
+**컨셉**: A 액터가 B 액터에게 `Hello`를 보내고, B가 A에게 `World`를 응답한 뒤, A가 probe로 결과를 전달하는 Typed 테스트 패턴. `ActorTestKit` + `TestProbe<String>`로 검증.
+
+**실행**: `cd skill-test/projects/sample19 && ./gradlew test --no-daemon`
+
+**결과**: PASS (`BUILD SUCCESSFUL`, 테스트 통과)
+
+---
+
+## sample20 — Java Akka Classic TestKit Hello/World
+
+**컨셉**: Classic `TestKit` 기반으로 A/B 액터 상호작용을 검증. `expectMsgEquals("World")`와 `expectNoMessage`를 사용해 응답과 불필요 메시지 부재를 함께 확인.
+
+**실행**: `cd skill-test/projects/sample20 && ./gradlew test --no-daemon`
+
+**결과**: PASS (`BUILD SUCCESSFUL`, 테스트 통과)
+
+---
+
+## sample21 — C# Akka.NET TestKit Hello/World (분리 프로젝트)
+
+**컨셉**: 닷넷 권장 구조에 맞춰 운영 프로젝트(`HelloActors`)와 테스트 프로젝트(`HelloActors.Tests`)를 분리. `Akka.TestKit.Xunit2`의 `TestKit` 상속 테스트로 `World` 응답을 검증.
+
+**실행**: `cd skill-test/projects/sample21 && dotnet test sample21.sln`
+
+**결과**: PASS (`Passed: 1, Failed: 0`)

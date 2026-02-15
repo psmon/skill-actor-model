@@ -8,3 +8,6 @@
 - skill-maker/docs/actor/04-memorizer-ai-agent 문서는 Agent를 만드는 특수한방법으로 별도 구분합니다.
 - 스킬은 이 프로젝트 전용인 .claude/skills 하위에 작성합니다.
 - 스킬이 다 작성되면 skill-maker/guides/actor-skills.md 에 스킬을 이용하는 베스트 프랙티스를 추가로 작성해주세요
+
+
+진행요원 : 클코드
