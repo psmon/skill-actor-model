@@ -167,6 +167,7 @@ TIP : 스킬에 의해 완성된 프로젝트를 다시한번 테스트 수행�
 - 유닛테스트가 있는경우 유닛테스트로 수행
 - 테스트 결과리포팅에 간단하게 프로젝트 컨셉도 설명할것
 - 프로젝트별 1회 테스트이기때문에 테스트가 기록된 프로젝트는 건너뛰어도되며 새롭게 추가된 프로젝트만 수행할것
+- 단 sample-cluster-* 프로젝트의 경우 코드관리및 지속기능 업데이트 모드이기때문에 새롭게 추가된 기능이 있는 경우 업데이트할것
 
 
 ## 스킬업데이트 지침
@@ -189,3 +190,10 @@ TIP : 스킬을 통해 한방완성을 지향하고, 한방완성못하고 추�
 - plugins/skill-actor-model/skills/kotlin-pekko-typed 에 방금 개선한부분을 참고 실수하지않도록 스킬업데이트, 추가된컨셉이 있다고하면 추가업데이트
 - plugins/skill-actor-model/skills/java-akka-classic 에 방금 개선한부분을 참고 실수하지않도록 스킬업데이트, 추가된컨셉이 있다고하면 추가업데이트
 - plugins/skill-actor-model/skills/dotnet-akka-net 에 방금 개선한부분을 참고 실수하지않도록 스킬업데이트, 추가된컨셉이 있다고하면 추가업데이트
+
+
+skill-test/projects 하위 모두 git ignore에 추가되어있지만
+아래 프로젝트는 예외로 관리대상 코드로 추가해죠, 그리고 java,kotlin,dotnet 프로젝트가 일반적으로 git iggore 하는부분도 추가해줄것
+-skill-test/projects/sample-cluster-dotnet
+-skill-test/projects/sample-cluster-java
+-skill-test/projects/sample-cluster-kotlin

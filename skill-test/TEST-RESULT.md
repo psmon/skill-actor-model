@@ -1,6 +1,6 @@
 # Skill로 생성된 프로젝트 테스트 결과
 
-> 테스트 일시: 2026-02-14, 2026-02-15 | 환경: WSL2 Ubuntu, Java 21, .NET 9.0, Kotlin 1.9.x
+> 테스트 일시: 2026-02-14 ~ 2026-02-15 | 환경: WSL2 Ubuntu, Java 21, .NET 9.0, Kotlin 1.9.x
 
 ## 종합 결과
 
@@ -25,6 +25,12 @@
 | 17 | sample16/kotlin-pekko-fsm-sqlite | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | NO-SOURCE |
 | 18 | sample17/java-akka-fsm-sqlite | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | NO-SOURCE |
 | 19 | sample18/dotnet-akka-fsm-sqlite | C# + Akka.NET 1.5.30 | `/dotnet-akka-net` | PASS | 테스트 프로젝트 없음 |
+| 20 | sample19 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | 1 passed |
+| 21 | sample20 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | 1 passed |
+| 22 | sample21 | C# + Akka.NET 1.5.60 | `/dotnet-akka-net` | PASS | 1 passed |
+| 23 | sample-cluster-java | Java + Akka Classic 2.7.0 | `/java-akka-classic-cluster` | PASS | 3 passed |
+| 24 | sample-cluster-kotlin | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed-cluster` | PASS | 2 passed |
+| 25 | sample-cluster-dotnet | C# + Akka.NET 1.5.60 | `/dotnet-akka-net-cluster` | PASS | 3 passed |
 
 ---
 
@@ -735,3 +741,106 @@ BUILD SUCCESSFUL
 **실행**: `cd skill-test/projects/sample21 && dotnet test sample21.sln`
 
 **결과**: PASS (`Passed: 1, Failed: 0`)
+
+---
+
+## sample-cluster-java — Java Akka Classic Cluster 패턴 유닛테스트
+
+**컨셉**: Akka Classic 2.7.x 클러스터 패턴 검증. 단일 JVM에서 클러스터를 자기 자신에게 조인(`cluster.join(cluster.selfAddress())`)하여 클러스터 Membership 이벤트, Singleton 액터, DistributedPubSub를 테스트한다. `akka-cluster`, `akka-cluster-tools` 의존성 사용.
+
+**실행**: `cd skill-test/projects/sample-cluster-java && ./gradlew clean test`
+
+**테스트 결과**: 3/3 PASSED (1.488s)
+
+| 테스트 | 설명 | 결과 |
+|--------|------|------|
+| `clusterListenerReceivesMemberUpEvent` | ClusterListenerActor가 MemberUp 이벤트를 수신하여 reportTo에 "member-up" 알림 | PASS |
+| `counterSingletonActorCountsCorrectly` | CounterSingletonActor에 Increment 3회 → GetCount 시 count=3 반환 | PASS |
+| `pubSubDeliversMessageToSubscriber` | DistributedPubSub mediator로 "test-topic"에 Publish → Subscriber가 수신 | PASS |
+
+```
+[INFO] Cluster Node [akka://ClusterTestSystem@127.0.0.1:44765] - Started up successfully
+[INFO] Cluster Node [akka://ClusterTestSystem@127.0.0.1:44765] - Node [...] is JOINING itself and forming new cluster
+[INFO] Cluster Node [akka://ClusterTestSystem@127.0.0.1:44765] - Leader is moving node [...] to [Up]
+[INFO] Member is Up: Member(akka://ClusterTestSystem@127.0.0.1:44765, Up)
+[INFO] Subscribed to topic: test-topic
+[INFO] Publishing message to test-topic: hello-cluster
+[INFO] Received message on topic [test-topic]: hello-cluster
+[INFO] Counter incremented to 1
+[INFO] Counter incremented to 2
+[INFO] Counter incremented to 3
+[INFO] Returning count: 3
+BUILD SUCCESSFUL
+```
+
+---
+
+## sample-cluster-kotlin — Kotlin Pekko Typed Cluster 패턴 유닛테스트
+
+**컨셉**: Pekko Typed 1.1.x 클러스터 패턴 검증. `ActorTestKit`과 단일 노드 클러스터(`Join.create(selfMember.address)`)를 사용하여 Singleton 액터와 Topic 기반 PubSub를 테스트한다. `pekko-cluster-typed`, `pekko-cluster-sharding-typed` 의존성 사용. sealed class 메시지 계층 패턴 적용.
+
+**실행**: `cd skill-test/projects/sample-cluster-kotlin && sed -i 's/\r$//' gradlew && ./gradlew clean test`
+
+**테스트 결과**: 2/2 PASSED
+
+| 테스트 | 설명 | 결과 |
+|--------|------|------|
+| `counter singleton actor counts correctly` | CounterSingletonActor에 Increment 3회 → GetCount 시 count=3 응답 | PASS |
+| `pubsub delivers message to subscriber` | Topic.create() 기반 PubSub에서 publish → subscriber가 메시지 수신 | PASS |
+
+```
+[INFO] Cluster Node [pekko://ClusterTestSystem@127.0.0.1:xxxxx] - Started up successfully
+[INFO] Cluster Node [...] - Node [...] is JOINING itself and forming new cluster
+[INFO] Cluster Node [...] - Leader is moving node [...] to [Up]
+[INFO] CounterSingletonActor: Incremented to 1
+[INFO] CounterSingletonActor: Incremented to 2
+[INFO] CounterSingletonActor: Incremented to 3
+[INFO] CounterSingletonActor: Returning count=3
+BUILD SUCCESSFUL
+```
+
+---
+
+## sample-cluster-dotnet — C# Akka.NET Cluster 패턴 유닛테스트
+
+**컨셉**: Akka.NET 1.5.x 클러스터 패턴 검증. `Akka.TestKit.Xunit2` 기반으로 단일 프로세스 클러스터(`cluster.Join(cluster.SelfAddress)`)를 구성하여 Membership 이벤트, Singleton 카운터 액터, DistributedPubSub를 테스트한다. `Akka.Cluster`, `Akka.Cluster.Tools` NuGet 패키지 사용. HOCON 인라인 설정으로 `dot-netty.tcp` 트랜스포트 구성.
+
+**실행**: `cd skill-test/projects/sample-cluster-dotnet && dotnet test ClusterActors.sln`
+
+**테스트 결과**: 3/3 PASSED
+
+| 테스트 | 설명 | 결과 |
+|--------|------|------|
+| `ClusterListener_should_receive_MemberUp_event` | ClusterListenerActor가 MemberUp 이벤트 수신 시 "member-up" 메시지 전달 | PASS |
+| `CounterSingleton_should_count_correctly` | CounterSingletonActor에 Increment 3회 → GetCount 시 count=3 반환 | PASS |
+| `PubSub_should_deliver_message_to_subscriber` | DistributedPubSub Mediator로 "test-topic"에 Publish → Subscriber 수신 | PASS |
+
+```
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Cluster started, joining self...
+  ClusterListenerActor: MemberUp received for akka.tcp://...
+  CounterSingletonActor: Incremented to 1
+  CounterSingletonActor: Incremented to 2
+  CounterSingletonActor: Incremented to 3
+  CounterSingletonActor: Count is 3
+  PubSubSubscriberActor: Subscribed to test-topic
+  PubSubPublisherActor: Published 'hello-cluster' to test-topic
+  PubSubSubscriberActor: Received 'hello-cluster' on test-topic
+
+Passed!  - Failed:     0, Passed:     3, Skipped:     0, Total:     3
+```
+
+---
+
+## 크로스 플랫폼 클러스터 테스트 비교
+
+| 항목 | sample-cluster-java (Java Akka) | sample-cluster-kotlin (Kotlin Pekko) | sample-cluster-dotnet (C# Akka.NET) |
+|------|--------------------------------|-------------------------------------|-------------------------------------|
+| 클러스터 조인 | `cluster.join(selfAddress)` | `cluster.manager().tell(Join.create(...))` | `cluster.Join(SelfAddress)` |
+| TestKit | `akka-testkit` + JUnit 5 | `pekko-actor-testkit-typed` + JUnit 5 | `Akka.TestKit.Xunit2` + xUnit |
+| HOCON 네임스페이스 | `akka { }` | `pekko { }` | `akka { }` |
+| 프로토콜 | `akka://` (Artery) | `pekko://` (Artery) | `akka.tcp://` (dot-netty) |
+| PubSub API | `DistributedPubSub.get().mediator()` | `Topic.create()` 액터 기반 | `DistributedPubSub.Get().Mediator` |
+| 총 테스트 | 3 | 2 | 3 |
+| 빌드 도구 | Gradle (Kotlin DSL) | Gradle (Kotlin DSL) | dotnet test (xUnit) |

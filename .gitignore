@@ -2,4 +2,26 @@
 /.idea
 .mcp.json
 /.claude
-/skill-test/projects
+/skill-test/projects/*
+# 클러스터 테스트 프로젝트는 관리 대상
+!/skill-test/projects/sample-cluster-java/
+!/skill-test/projects/sample-cluster-kotlin/
+!/skill-test/projects/sample-cluster-dotnet/
+
+# Java / Kotlin (Gradle)
+skill-test/projects/**/build/
+skill-test/projects/**/.gradle/
+skill-test/projects/**/gradle/
+skill-test/projects/**/gradlew
+skill-test/projects/**/gradlew.bat
+skill-test/projects/**/*.jar
+skill-test/projects/**/*.class
+skill-test/projects/**/out/
+skill-test/projects/**/bin/
+
+# .NET
+skill-test/projects/**/obj/
+skill-test/projects/**/bin/
+skill-test/projects/**/*.user
+skill-test/projects/**/*.suo
+skill-test/projects/**/.vs/

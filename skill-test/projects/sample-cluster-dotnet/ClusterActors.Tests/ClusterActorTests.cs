@@ -1,0 +1,72 @@
+using Akka.Actor;
+using Akka.Cluster;
+using Akka.Configuration;
+using Akka.TestKit.Xunit2;
+using ClusterActors;
+using Xunit;
+
+namespace ClusterActors.Tests;
+
+public class ClusterActorTests : TestKit
+{
+    private static readonly string HoconConfig = @"
+        akka {
+            actor.provider = cluster
+            remote.dot-netty.tcp {
+                hostname = ""127.0.0.1""
+                port = 0
+            }
+            cluster {
+                seed-nodes = []
+                min-nr-of-members = 1
+            }
+            loglevel = INFO
+        }";
+
+    public ClusterActorTests() : base(ConfigurationFactory.ParseString(HoconConfig))
+    {
+        // Single-node cluster: join self
+        var cluster = Cluster.Get(Sys);
+        cluster.Join(cluster.SelfAddress);
+        // Wait for cluster to form
+        Thread.Sleep(3000);
+    }
+
+    [Fact]
+    public void ClusterListener_should_receive_MemberUp_event()
+    {
+        var listener = Sys.ActorOf(Props.Create(() => new ClusterListenerActor(TestActor)));
+        ExpectMsg("member-up", TimeSpan.FromSeconds(5));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+    }
+
+    [Fact]
+    public void CounterSingleton_should_count_correctly()
+    {
+        var counter = Sys.ActorOf(Props.Create<CounterSingletonActor>());
+
+        counter.Tell(new CounterSingletonActor.Increment());
+        counter.Tell(new CounterSingletonActor.Increment());
+        counter.Tell(new CounterSingletonActor.Increment());
+        counter.Tell(new CounterSingletonActor.GetCount(TestActor));
+
+        var result = ExpectMsg<CounterSingletonActor.CountValue>(TimeSpan.FromSeconds(3));
+        Assert.Equal(3, result.Value);
+    }
+
+    [Fact]
+    public void PubSub_should_deliver_message_to_subscriber()
+    {
+        var subscriber = Sys.ActorOf(
+            Props.Create(() => new PubSubSubscriberActor("test-topic", TestActor)));
+
+        // Wait for subscription acknowledgment
+        ExpectMsg("subscribed", TimeSpan.FromSeconds(5));
+
+        var publisher = Sys.ActorOf(Props.Create<PubSubPublisherActor>());
+        publisher.Tell("hello-cluster");
+
+        ExpectMsg("hello-cluster", TimeSpan.FromSeconds(5));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+    }
+}
