@@ -2,8 +2,6 @@
 
 작성코드는 커밋되지 않으며 스킬을 활용하고 해당 스킬이 코드생성및 수행을 잘하는지 셀프 개선 활동을 위한 프롬프트입니다.
 
-```
-
 ## 1. Hello World 액터 코드 
 
 DOC : https://getakka.net/articles/actors/receive-actor-api.html
@@ -72,7 +70,7 @@ skill-test/projects/sample9 하위폴터에 프로젝트 생성, 생성후 실�
 
 -- Codex 실험
 - skill-maker 클코드 스킬을 Codex 등록요청
-- Codex의 스킬은 슬래쉬를빼고 요청가능
+- Codex의 스킬은 슬래쉬를빼고 요청할수 있다고 코텍스가 이야기함
 
 ## 4. Persistence
 
@@ -152,10 +150,18 @@ skill-test/projects/sample18 하위폴터에 프로젝트 생성, 생성후 실�
 스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
 ```
 
+## 코드작성 , 테스트
+TIP : 스킬에의한 코드작성과, 테스트의 컨텍스트를 분리해서 진행 - 작성한 녀석에게 테스트를 맡기면 성공하는 테스트를 할수 있기때문에 (개발과 QA가 분리되어야하는 우리의 법칙을 적용)
+
+다양한 조합으로 시도중 (카카오할인으로 코덱스가 생겨서 임시이용중)
+- 코드작성 클코드, 테스트 클코드
+- 코드작성 클코드 , 테스트 코덱스
+- 코드작성,테스트 모두 코덱스
 
 
+## 테스트 문서
+TIP : 스킬에 의해 완성된 프로젝트를 다시한번 테스트 수행하고 테스크 결과를 히스토리화문서화하는 과정
 
-## 테스트 문서 
 - skill-test/projects 하위 프로젝트들을 수행해 작동결과를 skill-test/TEST-RESULT.md 에 기록및 업데이트
 - 주로 콘솔로 작성되었으며 콘솔모드로 수행한 콘솔로그를 파악
 - 유닛테스트가 있는경우 유닛테스트도 수행
@@ -165,6 +171,8 @@ skill-test/projects/sample18 하위폴터에 프로젝트 생성, 생성후 실�
 ## 스킬업데이트 지침
 
 ### 스킬업데이트 전체지침
+TIP : 스킬에의해 새로운 코드가 생성된경우 새로운 스킬이 추가될수 있기때문에, 스킬의 스펙을 업데이트하기 위한용도
+
 - skill-test/projects 생성된 하위 프로젝트 코드를 참고해 스킬에 더욱 다양한 액터모델 패턴을 반영해 스킬을 개선합니다.
   - sample16 ~ sample19 생성된코드로 한정참조합니다. (나머지는 반영완료됨) 
   - skill-maker/Skill-MarketPlace.md : 스킬 플러그인을 관리하는 방법을 먼저참고합니다.
@@ -173,6 +181,8 @@ skill-test/projects/sample18 하위폴터에 프로젝트 생성, 생성후 실�
   - .claude-plugin/marketplace.json 버전도 업데이트해줄것
 
 ### 스킬업데이트 부분지침 - 클코드 컨텍스트내 코드오류및 개선사항이 진행되었을때 부분수행
+TIP : 스킬을 통해 한방완성을 지향하고, 한방완성못하고 추가 개선지침을 통해 완성한경우 해당 컨텍스트 내에서 진행시 스킬을 보완해줌
+
 - plugins/skill-actor-model/skills/kotlin-pekko-typed 에 방금 개선한부분을 참고 실수하지않도록 스킬업데이트, 추가된컨셉이 있다고하면 추가업데이트
 - plugins/skill-actor-model/skills/java-akka-classic 에 방금 개선한부분을 참고 실수하지않도록 스킬업데이트, 추가된컨셉이 있다고하면 추가업데이트
 - plugins/skill-actor-model/skills/dotnet-akka-net 에 방금 개선한부분을 참고 실수하지않도록 스킬업데이트, 추가된컨셉이 있다고하면 추가업데이트
