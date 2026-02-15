@@ -173,6 +173,26 @@ class BulkProcessor private constructor(
 | `onMessageEquals(FlushTimeout)` | `private object`에 대한 동등성 비교. 타이머 메시지 처리에 적합 |
 | `context.scheduleOnce()` | 일회성 스케줄링. `Cancellable`을 직접 관리 |
 
+#### FSM + SQLite 배치 인서트 (sample16 확장)
+
+- `IDLE/ACTIVE` 상태에서 이벤트(`event1~event5`)를 버퍼링
+- `context.scheduleOnce(3s)` 타이머 또는 `buffer.size >= 100` 임계치에서 flush
+- flush 시 `minOf(100, buffer.size)` 청크 단위로 반복 INSERT
+- 종료 메시지(`Stop`) 수신 시 잔여 버퍼를 강제 flush
+
+```kotlin
+private fun flushBuffered(reason: String) {
+    flushTimer?.cancel()
+    flushTimer = null
+    while (buffer.isNotEmpty()) {
+        val chunkSize = minOf(100, buffer.size)
+        val chunk = buffer.take(chunkSize)
+        buffer.subList(0, chunkSize).clear()
+        repo.insertBatch(chunk) // SQLite transaction batch insert
+    }
+}
+```
+
 ### 3. 타이머 (Timer)
 - `Behaviors.withTimers { timers -> }` 래핑
 - `timers.startTimerAtFixedRate()`, `startSingleTimer()`

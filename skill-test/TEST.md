@@ -124,6 +124,36 @@ skill-test/projects/sample15 하위폴터에 프로젝트 생성, 생성후 실�
 스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
 ```
 
+### 5. FSM Actor with Timer
+
+DOC : 다음 컨셉을 Kotlin Pekko Typed, Java Akka Classic, C# Akka.NET으로 구현, 각언어맞는 스킬을 참고할것
+- https://getakka.net/articles/actors/schedulers.html
+- https://getakka.net/articles/actors/finite-state-machine.html
+- 스킬경로 : plugins
+
+### Kottlin Pekko Typed
+```
+/kotlin-pekko-typed FSMActor를 이용 실시간 정크처리 인서트.. event1,2,3,4,5 가 왔을때 매번 인서트가아닌 3초마다 모은만큼 최대 100개씩 저장..저장장치는 SQLlite장치이용할것   \
+skill-test/projects/sample16 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
+
+### Java Akka Classic
+```
+/java-akka-classic FSMActor를 이용 실시간 정크처리 인서트.. event1,2,3,4,5 가 왔을때 매번 인서트가아닌 3초마다 모은만큼 최대 100개씩 저장..저장장치는 SQLlite장치이용할것  \
+skill-test/projects/sample17 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
+
+### C# Akka.NET
+```
+/dotnet-akka-net FSMActor를 이용 실시간 정크처리 인서트.. event1,2,3,4,5 가 왔을때 매번 인서트가아닌 3초마다 모은만큼 최대 100개씩 저장..저장장치는 SQLlite장치이용할것  \
+skill-test/projects/sample18 하위폴터에 프로젝트 생성, 생성후 실행해 콘솔결과 알려줄것(콘솔로그는 작성된 기능을 잘설명하는 로깅이여야함) \
+스킬을통한 코드생성이라 skill-test/projects 하위 이미작성된 샘플코드는 참고하지말것
+```
+
+
+
 
 ## 테스트 문서 
 - skill-test/projects 하위 프로젝트들을 수행해 작동결과를 skill-test/TEST-RESULT.md 에 기록및 업데이트
@@ -136,7 +166,7 @@ skill-test/projects/sample15 하위폴터에 프로젝트 생성, 생성후 실�
 
 ### 스킬업데이트 전체지침
 - skill-test/projects 생성된 하위 프로젝트 코드를 참고해 스킬에 더욱 다양한 액터모델 패턴을 반영해 스킬을 개선합니다.
-  - sample13 ~ sample16 생성된코드로 한정참조합니다. (나머지는 반영완료됨) 
+  - sample16 ~ sample19 생성된코드로 한정참조합니다. (나머지는 반영완료됨) 
   - skill-maker/Skill-MarketPlace.md : 스킬 플러그인을 관리하는 방법을 먼저참고합니다.
   - plugins : 스킬구성된 플로그인 경로입니다.
   - 기존 스킬을 참고해 개선합니다. 중복인경우 업데이트를 하지 않습니다.

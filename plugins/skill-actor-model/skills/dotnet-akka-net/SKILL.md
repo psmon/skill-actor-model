@@ -118,6 +118,36 @@ public class FSMBatchActor : FSM<State, IData>
 }
 ```
 
+### 2-1. FSM + SQLite 주기/임계치 배치 인서트 (sample18 확장)
+- `FSM<ActorState, BufferData>` + `ImmutableList<EventRecord>`로 상태 데이터 불변 유지
+- `SetTimer("flush-timer", Flush.Instance, 3s, false)` one-shot 타이머 사용
+- `StateTimeout` 대신 명시적 `Flush` 메시지로 타이머 이벤트 분리
+- `buffer >= 100` 또는 `Flush`/`Stop`에서 `min(100, remain)` 청크 flush
+- SQLite는 `Microsoft.Data.Sqlite` 트랜잭션 기반 반복 INSERT
+
+```csharp
+When(ActorState.Idle, state =>
+{
+    if (state.FsmEvent is Ingest ingest)
+    {
+        var next = state.StateData.Add(ToRecord(ingest));
+        SetTimer("flush-timer", Flush.Instance, TimeSpan.FromSeconds(3), false);
+        return GoTo(ActorState.Active).Using(next);
+    }
+    return null;
+});
+
+When(ActorState.Active, state =>
+{
+    if (state.FsmEvent is Flush)
+    {
+        FlushByChunk(state.StateData, "timer(3s)");
+        return GoTo(ActorState.Idle).Using(BufferData.Empty);
+    }
+    return null;
+});
+```
+
 ### 3. Streams 기반 Throttle (흐름 제어)
 - `Source.ActorRef<T>()` -> `.Throttle()` -> `Sink.ActorRef<T>()` 파이프라인
 - `OverflowStrategy.DropNew` 오버플로우 전략

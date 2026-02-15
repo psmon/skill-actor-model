@@ -268,6 +268,38 @@ public class SafeBatchActor extends AbstractActorWithTimers {
 
 > **실무 팁**: `batchList.size() >= threshold` 조건으로 즉시 Flush하는 로직을 추가하면 더 효율적입니다.
 
+### 4-1. AbstractFSM + SQLite 배치 인서트 (sample17 확장)
+- `AbstractFSM<ActorState, Data>`로 `IDLE/ACTIVE` 명시 상태 전환
+- `setTimer("flush-timer", Flush.INSTANCE, 3s, false)`로 one-shot flush 타이머
+- `eventEquals(Flush.INSTANCE, ...)`에서 타이머 기반 flush
+- `buffer >= 100`이면 임계치 flush, 남은 데이터는 상태 데이터로 유지 가능
+- SQLite는 `PreparedStatement#addBatch + executeBatch + commit` 트랜잭션 처리
+
+```java
+when(ActorState.IDLE,
+    matchEvent(Ingest.class, BufferData.class, (event, data) -> {
+        var next = data.add(toRecord(event));
+        setTimer("flush-timer", Flush.INSTANCE, Duration.create(3, TimeUnit.SECONDS), false);
+        return goTo(ActorState.ACTIVE).using(next);
+    })
+);
+
+when(ActorState.ACTIVE,
+    matchEvent(Ingest.class, BufferData.class, (event, data) -> {
+        var next = data.add(toRecord(event));
+        if (next.events().size() >= 100) {
+            cancelTimer("flush-timer");
+            flushByChunk(next, "threshold(100)");
+            return goTo(ActorState.IDLE).using(BufferData.empty());
+        }
+        return stay().using(next);
+    }).eventEquals(Flush.INSTANCE, (timeout, data) -> {
+        flushByChunk((BufferData) data, "timer(3s)");
+        return goTo(ActorState.IDLE).using(BufferData.empty());
+    })
+);
+```
+
 ### 5. 감독 전략 (Supervision)
 - `OneForOneStrategy` / `AllForOneStrategy`
 - `supervisorStrategy()` 오버라이드

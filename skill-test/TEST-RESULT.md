@@ -1,6 +1,6 @@
 # Skill로 생성된 프로젝트 테스트 결과
 
-> 테스트 일시: 2026-02-14 | 환경: WSL2 Ubuntu, Java 21, .NET 9.0, Kotlin 1.9.x
+> 테스트 일시: 2026-02-14, 2026-02-15 | 환경: WSL2 Ubuntu, Java 21, .NET 9.0, Kotlin 1.9.x
 
 ## 종합 결과
 
@@ -21,6 +21,10 @@
 | 13 | sample13 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | N/A |
 | 14 | sample14 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | N/A |
 | 15 | sample15 | C# + Akka.NET 1.5.25 | `/dotnet-akka-net` | PASS | N/A |
+| 16 | sample16 | Java + Kotlin AI Agent Console | `/actor-ai-agent-java`, `/actor-ai-agent-kotlin` | PASS | N/A |
+| 17 | sample16/kotlin-pekko-fsm-sqlite | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | NO-SOURCE |
+| 18 | sample17/java-akka-fsm-sqlite | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | NO-SOURCE |
+| 19 | sample18/dotnet-akka-fsm-sqlite | C# + Akka.NET 1.5.30 | `/dotnet-akka-net` | PASS | 테스트 프로젝트 없음 |
 
 ---
 
@@ -520,6 +524,135 @@ Graph 실행 완료
 - 분기 2개(fan1/fan2)와 병합 1개가 의도대로 작동
 - 출력이 입력 수의 2배로 생성되어 fan-out/fan-in 구조 확인
 - 유닛테스트 소스 없음(`N/A`)
+
+---
+
+## sample16 — Java/Kotlin AI Agent Pipeline Console
+
+**컨셉**: .NET 전용이었던 AI Agent 파이프라인 컨셉을 Java Akka Classic / Kotlin Pekko Typed 콘솔 데모로 분리 검증. 공통 파이프라인은 `[Analyze] -> [Search] -> [Decision] -> [Final] + [SideTask]`이며, 오케스트레이터가 단계 액터를 순차 호출하고 최종 응답 이후 사이드 태스크를 Fire-and-Forget으로 수행한다.
+
+### sample16/java-ai-agent
+
+**실행**: `./gradlew run`
+
+```
+Java Akka Classic AI Agent Pipeline (Console)
+[Analyze] -> [Search] -> [Decision] -> [Final] + [SideTask]
+[Analyze] message='RAG memory search for actor model tips'
+[Search] query='RAG memory search for actor model tips'
+[Decision] docs=3 -> top2
+[Final] selectedDocs=[ActorModel.md, AkkaTips.md]
+[Client] answer using docs=[ActorModel.md, AkkaTips.md]
+[SideTask] title-generation + embedding queued for 'RAG memory search for actor model tips'
+BUILD SUCCESSFUL
+```
+
+### sample16/kotlin-ai-agent
+
+**실행**: `./gradlew run`
+
+```
+Kotlin Pekko Typed AI Agent Pipeline (Console)
+[Analyze] -> [Search] -> [Decision] -> [Final] + [SideTask]
+[Analyze] message='RAG memory search for actor model tips'
+[Search] query='RAG memory search for actor model tips'
+[Decision] docs=3 -> top2
+[Final] selectedDocs=[ActorModel.md, PekkoTips.md]
+[Client] answer using docs=[ActorModel.md, PekkoTips.md]
+[SideTask] title-generation + embedding queued for 'RAG memory search for actor model tips'
+BUILD SUCCESSFUL
+```
+
+**검증**:
+- Java/Kotlin 모두 단계별 로그가 동일 순서로 출력되어 파이프라인 동작 확인
+- 최종 응답 이후 사이드 태스크 로그가 별도 출력되어 Fire-and-Forget 경로 분리 확인
+- 유닛테스트 소스 없음(`N/A`)
+
+---
+
+## sample16/kotlin-pekko-fsm-sqlite — Kotlin Pekko Typed FSM + Scheduler + SQLite
+
+**컨셉**: Pekko Typed FSM 액터(`IDLE/ACTIVE`)가 `event1~event5`를 실시간 수집하고, 매 이벤트 즉시 insert 대신 3초 타이머마다 배치 저장한다. flush 시 최대 100개 chunk 단위로 SQLite(`event_log`)에 insert한다.
+
+**실행**: `./gradlew run`
+
+```
+[IDLE->ACTIVE] first event arrived, bufferSize=1
+[ACTIVE] buffered up to 10
+[ACTIVE] buffered up to 20
+[ACTIVE] buffered up to 60
+[FLUSH:timer(3s)] inserted chunk=65, remain=0
+[FLUSH:timer(3s)] completed, totalInserted=65
+...
+[FLUSH:stop] inserted chunk=25, remain=0
+[FLUSH:stop] completed, totalInserted=25
+[RESULT] kotlin saved rows = 445, db=.../sample16-events.db
+BUILD SUCCESSFUL
+```
+
+**유닛테스트**: `./gradlew test` → `test NO-SOURCE`
+
+**검증**:
+- 3초 주기 타이머 flush 로그(`FLUSH:timer(3s)`) 반복 확인
+- flush가 100개 이하 chunk로 저장됨(본 실행에서는 65/25건)
+- SQLite 누적 row 증가 확인(`saved rows = 445`)
+
+---
+
+## sample17/java-akka-fsm-sqlite — Java Akka Classic FSM + Scheduler + SQLite
+
+**컨셉**: Akka Classic `AbstractFSM` 기반 배치 인서트 액터. `IDLE`에서 첫 이벤트 수신 시 `ACTIVE` 전환 + 3초 flush timer 시작, `ACTIVE`에서 이벤트 누적 후 타이머/중지 시 SQLite 배치 저장을 수행한다(최대 100개 chunk).
+
+**실행**: `./gradlew run`
+
+```
+[IDLE->ACTIVE] first event=event4, bufferSize=1
+[ACTIVE] buffered up to 10
+[ACTIVE] buffered up to 20
+[ACTIVE] buffered up to 60
+[FLUSH:timer(3s)] inserted chunk=65, remain=0
+[FLUSH:timer(3s)] completed, totalInserted=65
+...
+[FLUSH:stop] inserted chunk=25, remain=0
+[FLUSH:stop] completed, totalInserted=25
+[RESULT] java saved rows = 445, db=.../sample17-events.db
+BUILD SUCCESSFUL
+```
+
+**유닛테스트**: `./gradlew test` → `test NO-SOURCE`
+
+**검증**:
+- 타이머 기반 3초 flush 정상 동작
+- 이벤트 즉시 저장이 아닌 버퍼링 후 배치 저장 동작 확인
+- SQLite 누적 row 증가 확인(`saved rows = 445`)
+
+---
+
+## sample18/dotnet-akka-fsm-sqlite — C# Akka.NET FSM + Scheduler + SQLite
+
+**컨셉**: Akka.NET `FSM<ActorState, BufferData>`로 `event1~event5`를 수집하고, 스케줄러 tick 기반 입력을 3초 timer flush로 배치 저장한다. 저장은 SQLite(`event_log`) 트랜잭션 insert이며 flush 단위는 최대 100개다.
+
+**실행**: `dotnet run`
+
+```
+[IDLE->ACTIVE] first event=event2, bufferSize=1
+[ACTIVE] buffered up to 10
+[ACTIVE] buffered up to 20
+[ACTIVE] buffered up to 60
+[FLUSH:timer(3s)] inserted chunk=65, remain=0
+[FLUSH:timer(3s)] completed, totalInserted=65
+...
+[FLUSH:stop] inserted chunk=25, remain=0
+[FLUSH:stop] completed, totalInserted=25
+[RESULT] csharp saved rows = 440, db=.../sample18-events.db
+```
+
+**유닛테스트**: `dotnet test -v minimal` 실행, 테스트 프로젝트가 없어 restore 확인 후 종료(ExitCode 0)
+
+**검증**:
+- 3초 타이머 flush와 stop flush 동작 로그 확인
+- flush 단위가 최대 100개 이하로 유지됨(본 실행 65/25건)
+- SQLite 누적 row 증가 확인(`saved rows = 440`)
 
 ---
 

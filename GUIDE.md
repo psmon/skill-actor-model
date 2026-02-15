@@ -33,14 +33,16 @@ Claude Code 스킬 플러그인으로, 액터 모델(Actor Model)을 Java / Kotl
 ```
 
 
-## 스킬 4종
+## 스킬 6종
 
 | 스킬 | 명령어 | 플랫폼 | 액터 베이스 |
 |------|--------|--------|------------|
 | Java Akka Classic | `/java-akka-classic` | Java + Akka 2.7.x | `AbstractActor` |
 | Kotlin Pekko Typed | `/kotlin-pekko-typed` | Kotlin + Pekko 1.1.x | `AbstractBehavior<T>` |
 | C# Akka.NET | `/dotnet-akka-net` | C# + Akka.NET 1.5.x | `ReceiveActor` |
-| AI Agent Pipeline | `/actor-ai-agent` | C# + Akka.NET + LLM | `ReceiveActor` + AI |
+| AI Agent Pipeline (.NET) | `/actor-ai-agent` | C# + Akka.NET + LLM | `ReceiveActor` + AI |
+| AI Agent Pipeline (Java) | `/actor-ai-agent-java` | Java + Akka Classic + LLM | `AbstractActor` + AI |
+| AI Agent Pipeline (Kotlin) | `/actor-ai-agent-kotlin` | Kotlin + Pekko Typed + LLM | `AbstractBehavior<T>` + AI |
 
 플러그인 설치 시 네임스페이스 접두사: `/skill-actor-model:kotlin-pekko-typed` 형태.
 
@@ -51,7 +53,7 @@ skill-actor-model/
 ├── .claude-plugin/marketplace.json    # 마켓플레이스 카탈로그
 ├── plugins/skill-actor-model/         # 플러그인 배포본
 │   ├── .claude-plugin/plugin.json
-│   └── skills/                        # SKILL.md 4종 (실제 스킬 정의)
+│   └── skills/                        # SKILL.md 6종 (실제 스킬 정의)
 ├── skill-maker/docs/actor/            # 스킬 생성 참조 문서 (패턴 가이드)
 │   ├── 00-actor-model-overview.md
 │   ├── 01-java-akka-classic/

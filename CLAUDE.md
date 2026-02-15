@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Code 스킬 플러그인 저장소. 액터 모델(Actor Model) 코드를 Java / Kotlin / C# 세 플랫폼에서 생성하는 4종의 스킬을 제공한다. 버전: 1.1.0, 라이선스: MIT.
+Claude Code 스킬 플러그인 저장소. 액터 모델(Actor Model) 코드를 Java / Kotlin / C# 세 플랫폼에서 생성하는 6종의 스킬을 제공한다. 버전: 1.1.0, 라이선스: MIT.
 
 ## Skills (슬래시 명령어)
 
@@ -14,6 +14,8 @@ Claude Code 스킬 플러그인 저장소. 액터 모델(Actor Model) 코드를 
 | `/kotlin-pekko-typed` | Kotlin + Pekko Typed 1.1.x | `AbstractBehavior<T>` |
 | `/dotnet-akka-net` | C# + Akka.NET 1.5.x | `ReceiveActor` |
 | `/actor-ai-agent` | C# + Akka.NET + LLM | `ReceiveActor` + AI Pipeline |
+| `/actor-ai-agent-java` | Java + Akka Classic + LLM | `AbstractActor` + AI Pipeline |
+| `/actor-ai-agent-kotlin` | Kotlin + Pekko Typed + LLM | `AbstractBehavior<T>` + AI Pipeline |
 
 플러그인 설치 시 네임스페이스 접두사: `/skill-actor-model:kotlin-pekko-typed` 형태.
 
@@ -33,7 +35,7 @@ Claude Code 스킬 플러그인 저장소. 액터 모델(Actor Model) 코드를 
 ```
 plugins/skill-actor-model/
 ├── .claude-plugin/plugin.json        # 플러그인 매니페스트 (name, version)
-└── skills/{skill-name}/SKILL.md      # 스킬 정의 (4종)
+└── skills/{skill-name}/SKILL.md      # 스킬 정의 (6종)
 
 .claude-plugin/marketplace.json       # 마켓플레이스 카탈로그 (루트)
 

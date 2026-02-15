@@ -11,7 +11,9 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 | Java Akka Classic | `/java-akka-classic` | Java + Akka Classic 2.7.x |
 | Kotlin Pekko Typed | `/kotlin-pekko-typed` | Kotlin + Pekko Typed 1.1.x |
 | C# Akka.NET | `/dotnet-akka-net` | C# + Akka.NET 1.5.x |
-| AI Agent Pipeline | `/actor-ai-agent` | C# + Akka.NET + LLM |
+| AI Agent Pipeline (.NET) | `/actor-ai-agent` | C# + Akka.NET + LLM |
+| AI Agent Pipeline (Java) | `/actor-ai-agent-java` | Java + Akka Classic + LLM |
+| AI Agent Pipeline (Kotlin) | `/actor-ai-agent-kotlin` | Kotlin + Pekko Typed + LLM |
 
 ## 설치 방법
 
@@ -47,7 +49,7 @@ Claude Code에서 아래 명령어를 순서대로 실행합니다.
 ```
 
 
-설치 후 `/java-akka-classic`, `/kotlin-pekko-typed`, `/dotnet-akka-net`, `/actor-ai-agent` 명령어를 사용할 수 있습니다.
+설치 후 `/java-akka-classic`, `/kotlin-pekko-typed`, `/dotnet-akka-net`, `/actor-ai-agent`, `/actor-ai-agent-java`, `/actor-ai-agent-kotlin` 명령어를 사용할 수 있습니다.
 
 > 플러그인을 최신 버전으로 업데이트하려면: `/plugin marketplace update`
 
@@ -70,6 +72,8 @@ Claude Code에서 슬래시 명령어로 원하는 플랫폼의 액터 패턴 �
 /kotlin-pekko-typed sealed class 기반 상태 전환 액터 구현
 /dotnet-akka-net FSM 배치 처리 액터, 1초 타임아웃 자동 플러시
 /actor-ai-agent RAG 기반 질의분석 -> 검색 -> 평가 -> 응답 파이프라인 설계
+/actor-ai-agent-java Java Akka 기반 질의분석 -> 검색 -> 평가 -> 응답 파이프라인 설계
+/actor-ai-agent-kotlin Kotlin Pekko 기반 질의분석 -> 검색 -> 평가 -> 응답 파이프라인 설계
 ```
 
 플러그인으로 설치한 경우 네임스페이스가 붙습니다.
@@ -93,12 +97,16 @@ skill-actor-model/
 │       ├── java-akka-classic/SKILL.md
 │       ├── kotlin-pekko-typed/SKILL.md
 │       ├── dotnet-akka-net/SKILL.md
-│       └── actor-ai-agent/SKILL.md
+│       ├── actor-ai-agent/SKILL.md
+│       ├── actor-ai-agent-java/SKILL.md
+│       └── actor-ai-agent-kotlin/SKILL.md
 ├── .claude/skills/                    # 로컬 개발용 스킬 (동일 내용)
 │   ├── java-akka-classic/SKILL.md
 │   ├── kotlin-pekko-typed/SKILL.md
 │   ├── dotnet-akka-net/SKILL.md
-│   └── actor-ai-agent/SKILL.md
+│   ├── actor-ai-agent/SKILL.md
+│   ├── actor-ai-agent-java/SKILL.md
+│   └── actor-ai-agent-kotlin/SKILL.md
 ├── skill-maker/
 │   ├── docs/actor/                    # 플랫폼별 액터 패턴 참조 문서
 │   │   ├── 00-actor-model-overview.md
