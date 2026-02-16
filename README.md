@@ -2,7 +2,7 @@
 
 Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어에서 학습**할 수 있는 스킬셋입니다.
 
-동일한 동시성 패턴(Tell, Ask, Router, Supervision, Timer, Batch, Stream, Cluster 등)이 Java, Kotlin, C# 세 플랫폼에서 어떻게 구현되는지 비교하며 학습할 수 있도록 설계되었습니다.
+동일한 동시성 패턴(Tell, Ask, Router, Supervision, Timer, Batch, Stream, Cluster, Infrastructure 등)이 Java, Kotlin, C# 세 플랫폼에서 어떻게 구현되는지 비교하며 학습할 수 있도록 설계되었습니다.
 
 ## 스킬 목록
 
@@ -17,6 +17,9 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 | Java Akka Classic Cluster | `/java-akka-classic-cluster` | Java + Akka Classic Cluster 2.7.x |
 | Kotlin Pekko Typed Cluster | `/kotlin-pekko-typed-cluster` | Kotlin + Pekko Typed Cluster 1.1.x |
 | C# Akka.NET Cluster | `/dotnet-akka-net-cluster` | C# + Akka.NET Cluster 1.5.x |
+| Java Akka Classic Infra | `/java-akka-classic-infra` | Java + Akka Classic + Docker/K8s |
+| Kotlin Pekko Typed Infra | `/kotlin-pekko-typed-infra` | Kotlin + Pekko Typed + Docker/K8s |
+| C# Akka.NET Infra | `/dotnet-akka-net-infra` | C# + Akka.NET + Docker/K8s |
 | AI Agent Pipeline (.NET) | `/actor-ai-agent` | C# + Akka.NET + LLM |
 | AI Agent Pipeline (Java) | `/actor-ai-agent-java` | Java + Akka Classic + LLM |
 | AI Agent Pipeline (Kotlin) | `/actor-ai-agent-kotlin` | Kotlin + Pekko Typed + LLM |
@@ -55,7 +58,7 @@ Claude Code에서 아래 명령어를 순서대로 실행합니다.
 ```
 
 
-설치 후 `/java-akka-classic`, `/kotlin-pekko-typed`, `/dotnet-akka-net`, `/java-akka-classic-test`, `/kotlin-pekko-typed-test`, `/dotnet-akka-net-test`, `/java-akka-classic-cluster`, `/kotlin-pekko-typed-cluster`, `/dotnet-akka-net-cluster`, `/actor-ai-agent`, `/actor-ai-agent-java`, `/actor-ai-agent-kotlin` 명령어를 사용할 수 있습니다.
+설치 후 `/java-akka-classic`, `/kotlin-pekko-typed`, `/dotnet-akka-net`, `/java-akka-classic-test`, `/kotlin-pekko-typed-test`, `/dotnet-akka-net-test`, `/java-akka-classic-cluster`, `/kotlin-pekko-typed-cluster`, `/dotnet-akka-net-cluster`, `/java-akka-classic-infra`, `/kotlin-pekko-typed-infra`, `/dotnet-akka-net-infra`, `/actor-ai-agent`, `/actor-ai-agent-java`, `/actor-ai-agent-kotlin` 명령어를 사용할 수 있습니다.
 
 > 플러그인을 최신 버전으로 업데이트하려면: `/plugin marketplace update`
 
@@ -83,6 +86,9 @@ Claude Code에서 슬래시 명령어로 원하는 플랫폼의 액터 패턴 �
 /java-akka-classic-cluster Singleton 카운터 액터 + PubSub로 상태 브로드캐스트
 /kotlin-pekko-typed-cluster Sharding 디바이스 엔티티 + 패시베이션 2분 설정
 /dotnet-akka-net-cluster 클러스터 설정 + Singleton + Sharding 통합 예제
+/java-akka-classic-infra docker-compose 3노드 클러스터 서비스 디스커버리 구성
+/kotlin-pekko-typed-infra kubernetes 3-replica Deployment + RBAC + Headless Service 생성
+/dotnet-akka-net-infra kubernetes Akka.Hosting 방식 K8s Discovery + lease-majority SBR 구성
 /actor-ai-agent RAG 기반 질의분석 -> 검색 -> 평가 -> 응답 파이프라인 설계
 /actor-ai-agent-java Java Akka 기반 질의분석 -> 검색 -> 평가 -> 응답 파이프라인 설계
 /actor-ai-agent-kotlin Kotlin Pekko 기반 질의분석 -> 검색 -> 평가 -> 응답 파이프라인 설계
@@ -99,6 +105,9 @@ Claude Code에서 슬래시 명령어로 원하는 플랫폼의 액터 패턴 �
 /skill-actor-model:java-akka-classic-cluster Cluster Singleton + Sharding
 /skill-actor-model:kotlin-pekko-typed-cluster Cluster PubSub + ServiceKey
 /skill-actor-model:dotnet-akka-net-cluster Cluster Membership + SBR 설정
+/skill-actor-model:java-akka-classic-infra Docker Compose Config Discovery
+/skill-actor-model:kotlin-pekko-typed-infra Kubernetes API Discovery + Bootstrap
+/skill-actor-model:dotnet-akka-net-infra Kubernetes Akka.Hosting Discovery
 ```
 
 자연어로 질문해도 관련 스킬이 자동 활성화됩니다.
@@ -121,6 +130,9 @@ skill-actor-model/
 │       ├── java-akka-classic-cluster/SKILL.md
 │       ├── kotlin-pekko-typed-cluster/SKILL.md
 │       ├── dotnet-akka-net-cluster/SKILL.md
+│       ├── java-akka-classic-infra/SKILL.md
+│       ├── kotlin-pekko-typed-infra/SKILL.md
+│       ├── dotnet-akka-net-infra/SKILL.md
 │       ├── actor-ai-agent/SKILL.md
 │       ├── actor-ai-agent-java/SKILL.md
 │       └── actor-ai-agent-kotlin/SKILL.md
@@ -132,7 +144,8 @@ skill-actor-model/
 │   │   ├── 02-kotlin-pekko-typed/
 │   │   ├── 03-dotnet-akka-net/
 │   │   ├── 04-memorizer-ai-agent/
-│   │   └── 05-cross-platform-comparison.md
+│   │   ├── 05-cross-platform-comparison.md
+│   │   └── infra/                     # 인프라 디스커버리 참조 문서
 │   └── guides/
 │       └── actor-skills.md            # 스킬 활용 베스트 프랙티스
 └── README.md
@@ -154,6 +167,8 @@ skill-actor-model/
 | Cluster Sharding | O | O | O | - |
 | Distributed PubSub | O | O | O | - |
 | Split Brain Resolver | O | O | O | - |
+| Docker Compose Infra | O | O | O | - |
+| Kubernetes Infra | O | O | O | - |
 | SSE / WebSocket | - | O | O | O |
 | AI Pipeline | - | - | - | O |
 
