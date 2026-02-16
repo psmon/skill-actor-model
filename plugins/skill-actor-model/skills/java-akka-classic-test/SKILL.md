@@ -37,6 +37,13 @@ tasks.test {
 3. 대상 액터에 메시지 주입
 4. `expectMsg`, `expectNoMessage`, `within`으로 검증
 
+## 권장 대기 전략 (중요)
+
+- `Thread.sleep`로 클러스터 형성/전파를 기다리지 않습니다.
+- `awaitAssert(max, interval, assertion)`을 기본 대기 전략으로 사용합니다.
+- 크로스노드 전파 검증은 `awaitAssert` 내부에서 publish/query + `expectMsg*`를 재시도합니다.
+- `expectNoMessage`는 \"추가 메시지 누출 검증\" 용도로만 짧게 사용합니다.
+
 ```java
 @Test
 void hello_world_roundtrip() {

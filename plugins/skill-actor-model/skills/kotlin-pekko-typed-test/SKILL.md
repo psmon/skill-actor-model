@@ -42,6 +42,14 @@ tasks.test {
 4. `probe.expectMessage(...)`로 결과 검증
 5. `@AfterEach`에서 `testKit.shutdownTestKit()`
 
+## 권장 대기 전략 (중요)
+
+- `Thread.sleep`를 테스트 본문에 두지 않습니다.
+- 전파/형성 대기는 `TestProbe.awaitAssert(max, interval) { ... }`로 감쌉니다.
+- Receptionist/Topic 전파처럼 eventually-consistent 경로는:
+  - `awaitAssert` 내부에서 조회/발행을 수행하고
+  - `expectMessage*`로 관찰자 기준 완료를 검증합니다.
+
 ```kotlin
 @Test
 fun `A sends Hello and receives World from B`() {

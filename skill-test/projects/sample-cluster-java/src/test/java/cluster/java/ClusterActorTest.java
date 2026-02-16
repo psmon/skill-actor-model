@@ -3,6 +3,7 @@ package cluster.java;
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.cluster.Cluster;
+import akka.cluster.MemberStatus;
 import akka.testkit.javadsl.TestKit;
 import com.typesafe.config.ConfigFactory;
 import org.junit.jupiter.api.AfterAll;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import scala.concurrent.duration.FiniteDuration;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.StreamSupport;
 
 class ClusterActorTest {
     private static ActorSystem system;
@@ -22,14 +24,29 @@ class ClusterActorTest {
         // Single-node cluster: join self
         Cluster cluster = Cluster.get(system);
         cluster.join(cluster.selfAddress());
-        // Wait for cluster to form
-        try { Thread.sleep(3000); } catch (InterruptedException e) { }
+        awaitClusterUp(system, 1, Duration.ofSeconds(10));
     }
 
     @AfterAll
     static void teardown() {
         TestKit.shutdownActorSystem(system,
             FiniteDuration.apply(10, TimeUnit.SECONDS), true);
+    }
+
+    private static void awaitClusterUp(ActorSystem targetSystem, int expectedMembers, Duration timeout) {
+        new TestKit(targetSystem) {{
+            awaitAssert(timeout, Duration.ofMillis(200), () -> {
+                long upCount = StreamSupport.stream(
+                        Cluster.get(targetSystem).state().getMembers().spliterator(), false)
+                    .filter(m -> m.status().equals(MemberStatus.up()))
+                    .count();
+
+                if (upCount < expectedMembers) {
+                    throw new AssertionError("Expected at least " + expectedMembers + " Up members but got " + upCount);
+                }
+                return null;
+            });
+        }};
     }
 
     @Test

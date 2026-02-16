@@ -50,20 +50,37 @@ public sealed class TwoNodeClusterFixture : IDisposable
         JoiningSystem = ActorSystem.Create("TwoNodeClusterSystem",
             ConfigurationFactory.ParseString(JoiningConfig));
 
-        WaitForClusterUp(SeedSystem, 2, 15);
+        WaitForClusterUpAsync(SeedSystem, 2, TimeSpan.FromSeconds(15))
+            .GetAwaiter()
+            .GetResult();
     }
 
-    private static void WaitForClusterUp(ActorSystem system, int expectedMembers, int timeoutSeconds)
+    private static Task WaitForClusterUpAsync(ActorSystem system, int expectedMembers, TimeSpan timeout)
     {
         var cluster = Cluster.Get(system);
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-        while (DateTime.UtcNow < deadline)
+        var deadline = DateTime.UtcNow + timeout;
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Timer? timer = null;
+        timer = new Timer(_ =>
         {
             var upCount = cluster.State.Members.Count(m => m.Status == MemberStatus.Up);
-            if (upCount >= expectedMembers) return;
-            Thread.Sleep(500);
-        }
-        throw new Exception($"Cluster did not form with {expectedMembers} Up members within {timeoutSeconds}s");
+            if (upCount >= expectedMembers)
+            {
+                timer?.Dispose();
+                tcs.TrySetResult(true);
+                return;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                timer?.Dispose();
+                tcs.TrySetException(new TimeoutException(
+                    $"Expected at least {expectedMembers} Up members but got {upCount}."));
+            }
+        }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(200));
+
+        return tcs.Task;
     }
 
     public void Dispose()
@@ -76,60 +93,85 @@ public sealed class TwoNodeClusterFixture : IDisposable
 }
 
 /// <summary>
-/// 수신한 메시지를 순서대로 수집하는 경량 프로브 액터.
-/// WaitForMessages로 특정 개수의 메시지가 도착할 때까지 대기할 수 있다.
+/// 수신 메시지를 순서대로 모으고, 지정 개수 도달 시 즉시 완료한다.
 /// </summary>
 public class MessageCollectorActor : ReceiveActor
 {
     private readonly List<object> _messages = new();
-    private readonly List<(int expected, TaskCompletionSource<List<object>> tcs)> _waiters = new();
+    private readonly List<Waiter> _waiters = new();
 
-    public sealed record GetCollected(TaskCompletionSource<List<object>> Tcs);
+    public sealed record WaitForCount(int Count, TimeSpan Timeout, TaskCompletionSource<List<object>> Tcs);
+    private sealed record WaitTimeout(TaskCompletionSource<List<object>> Tcs);
+
+    private sealed class Waiter
+    {
+        public required int Count { get; init; }
+        public required TaskCompletionSource<List<object>> Tcs { get; init; }
+        public required ICancelable Timeout { get; init; }
+    }
 
     public MessageCollectorActor()
     {
-        Receive<GetCollected>(msg =>
+        Receive<WaitForCount>(msg =>
         {
-            msg.Tcs.TrySetResult(new List<object>(_messages));
+            if (_messages.Count >= msg.Count)
+            {
+                msg.Tcs.TrySetResult(new List<object>(_messages));
+                return;
+            }
+
+            var timeout = Context.System.Scheduler.ScheduleTellOnceCancelable(
+                msg.Timeout,
+                Self,
+                new WaitTimeout(msg.Tcs),
+                Self);
+
+            _waiters.Add(new Waiter
+            {
+                Count = msg.Count,
+                Tcs = msg.Tcs,
+                Timeout = timeout
+            });
+        });
+
+        Receive<WaitTimeout>(msg =>
+        {
+            var waiter = _waiters.FirstOrDefault(w => ReferenceEquals(w.Tcs, msg.Tcs));
+            if (waiter is null) return;
+
+            waiter.Timeout.Cancel();
+            _waiters.Remove(waiter);
+            msg.Tcs.TrySetException(new TimeoutException(
+                $"Expected {waiter.Count} messages but only got {_messages.Count}."));
         });
 
         ReceiveAny(msg =>
         {
             _messages.Add(msg);
-            foreach (var (expected, tcs) in _waiters.ToList())
-            {
-                if (_messages.Count >= expected)
-                {
-                    tcs.TrySetResult(new List<object>(_messages));
-                    _waiters.Remove((expected, tcs));
-                }
-            }
+            CompleteSatisfiedWaiters();
         });
     }
 
-    /// <summary>
-    /// 외부에서 N개 메시지 도착을 대기하는 도우미.
-    /// 이미 N개 이상 수집되었으면 즉시 반환한다.
-    /// </summary>
-    public static async Task<List<object>> WaitForMessages(
-        IActorRef collector, int count, TimeSpan timeout)
+    private void CompleteSatisfiedWaiters()
     {
-        var tcs = new TaskCompletionSource<List<object>>();
-        collector.Tell(new GetCollected(tcs));
-        var current = await tcs.Task;
-        if (current.Count >= count) return current;
-
-        // 아직 부족하면 폴링으로 대기
-        var deadline = DateTime.UtcNow.Add(timeout);
-        while (DateTime.UtcNow < deadline)
+        foreach (var waiter in _waiters.ToList())
         {
-            await Task.Delay(200);
-            var tcs2 = new TaskCompletionSource<List<object>>();
-            collector.Tell(new GetCollected(tcs2));
-            var result = await tcs2.Task;
-            if (result.Count >= count) return result;
+            if (_messages.Count < waiter.Count) continue;
+
+            waiter.Timeout.Cancel();
+            _waiters.Remove(waiter);
+            waiter.Tcs.TrySetResult(new List<object>(_messages));
         }
-        throw new TimeoutException($"Expected {count} messages but only got {current.Count}");
+    }
+
+    public static async Task<List<object>> WaitForMessages(
+        IActorRef collector,
+        int count,
+        TimeSpan timeout)
+    {
+        var tcs = new TaskCompletionSource<List<object>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        collector.Tell(new WaitForCount(count, timeout, tcs));
+        return await tcs.Task.ConfigureAwait(false);
     }
 }
 
@@ -164,7 +206,6 @@ public class TwoNodeClusterTests : IClassFixture<TwoNodeClusterFixture>
         var collector = _f.SeedSystem.ActorOf(
             Props.Create<MessageCollectorActor>(), $"listener-collector-{Guid.NewGuid():N}");
 
-        // ClusterListenerActor가 collector에 "member-up" 메시지를 전달
         _f.SeedSystem.ActorOf(
             Props.Create(() => new ClusterListenerActor(collector)),
             $"listener-2node-{Guid.NewGuid():N}");
@@ -181,24 +222,18 @@ public class TwoNodeClusterTests : IClassFixture<TwoNodeClusterFixture>
     {
         var actorName = $"counter-2node-{Guid.NewGuid():N}";
 
-        // Seed 노드에 카운터 생성
         var counter = _f.SeedSystem.ActorOf(
             Props.Create<CounterSingletonActor>(), actorName);
 
-        // Seed 노드에서 2회 증가
         counter.Tell(new CounterSingletonActor.Increment());
         counter.Tell(new CounterSingletonActor.Increment());
 
-        // Joining 노드에서 ActorSelection으로 리모트 카운터에 접근
         var seedAddress = Cluster.Get(_f.SeedSystem).SelfAddress;
         var counterPath = $"{seedAddress}/user/{actorName}";
         var remoteCounter = _f.JoiningSystem.ActorSelection(counterPath);
 
-        // Joining 노드에서 1회 증가
         remoteCounter.Tell(new CounterSingletonActor.Increment());
-        await Task.Delay(1000);
 
-        // Joining 노드의 collector에서 카운트 조회
         var collector = _f.JoiningSystem.ActorOf(
             Props.Create<MessageCollectorActor>(), $"counter-reply-{Guid.NewGuid():N}");
 
@@ -214,10 +249,8 @@ public class TwoNodeClusterTests : IClassFixture<TwoNodeClusterFixture>
     [Fact]
     public async Task PubSub_should_deliver_across_nodes()
     {
-        // Seed 노드에서 DistributedPubSub mediator 사전 초기화
         var seedMediator = DistributedPubSub.Get(_f.SeedSystem).Mediator;
 
-        // Joining 노드에서 PubSubSubscriberActor를 통해 구독 (collector에 포워딩)
         var collector = _f.JoiningSystem.ActorOf(
             Props.Create<MessageCollectorActor>(), $"pubsub-collector-{Guid.NewGuid():N}");
 
@@ -225,21 +258,27 @@ public class TwoNodeClusterTests : IClassFixture<TwoNodeClusterFixture>
             Props.Create(() => new PubSubSubscriberActor("test-topic", collector)),
             $"sub-2node-{Guid.NewGuid():N}");
 
-        // "subscribed" 메시지 수신 대기
         var ackMessages = await MessageCollectorActor
             .WaitForMessages(collector, 1, TimeSpan.FromSeconds(5));
         Assert.Equal("subscribed", ackMessages[0]);
 
-        // DistributedPubSub 크로스노드 전파 대기
-        await Task.Delay(5000);
+        var repeatedPublish = _f.SeedSystem.Scheduler.ScheduleTellRepeatedlyCancelable(
+            TimeSpan.Zero,
+            TimeSpan.FromMilliseconds(300),
+            seedMediator,
+            new Publish("test-topic", "cross-node-hello"),
+            ActorRefs.NoSender);
 
-        // Seed 노드의 mediator로 직접 발행 (크로스노드)
-        seedMediator.Tell(new Publish("test-topic", "cross-node-hello"));
+        try
+        {
+            var allMessages = await MessageCollectorActor
+                .WaitForMessages(collector, 2, TimeSpan.FromSeconds(10));
 
-        // Joining 노드의 collector: "subscribed" + "cross-node-hello" = 2개
-        var allMessages = await MessageCollectorActor
-            .WaitForMessages(collector, 2, TimeSpan.FromSeconds(10));
-
-        Assert.Equal("cross-node-hello", allMessages[1]);
+            Assert.Equal("cross-node-hello", allMessages[1]);
+        }
+        finally
+        {
+            repeatedPublish.Cancel();
+        }
     }
 }

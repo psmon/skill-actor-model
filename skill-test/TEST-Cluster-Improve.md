@@ -68,15 +68,6 @@ dotnet-akka-net dotnet-akka-net-test dotnet-akka-net-cluster 스킬을 활용해
 다음경로 프로젝트 개선 : skill-test/projects/sample-cluster-dotnet
 ```
 
-## 개선과정중 추가지침 
-TIP : 큰 변화가 생기는경우 회차완료를 하고 깃푸시를 해둘것..(실패할수도 있기때문에)
-
-- AkkaTestToolkit은 블락없이(Sleep)없이 대상 클러스터 완료및 액터의 이벤트를 관찰자관점에서 수신받을수 있는데 이를 활용해 테스트중 Sleep를 통한 대기코드를 가급적 없앨것
-- 일반 유닛테스트와 AkkaToolkit으로 유닛테스트를 했을때 의도적인 블락킹이 없는 점이 AkkaTookit을 이용한 유닛테스트의 장점이며 이를 최대한 살릴것, 테스트 수행을위한 관찰자액터가 필요하면 이것을 활용하고 테스트가능한 구조로 만들것
-- 이개선 지침은 테스트와 관련된것이니 개선후 검증수행후 테스트관련 스킬을 업데이트할것
-- skill-test/TEST-RESULT.md : 에 수행결과를 업데이트해주세요
-- plugins/skill-actor-model : 이 활동에의해 추가발견된 개념인 경우 기존 스킬셋트과 비교해 없는경우 추가업데이트및 개선하고, 스킬버전업도 함께 진행해주세요
-
 ## 개선완료후 지침 (문서및 스킬업데이트)
 - skill-test/TEST-RESULT.md : 에 수행결과를 업데이트해주세요
 - skill-test/LANG-SPECS-RESULT.md : 수행과정중 발견한 언어스펙의 차이에따른 구현을 비교하는 문서를 생성하고 지속업데이트해주세요
@@ -254,3 +245,102 @@ TIP : 클러스터 테스트의 경우 N개의 복합노드 구성 테스트가 
 │                                                                                                                                                                                                                   │
 │ 기존 스킬 구조(1~7번)는 변경하지 않고, 코드 생성 규칙 바로 위에 새 섹션 8을 삽입한다.   
 ```
+
+## 1.0.1 - 클러스터링 테스트방법 개선지침 by Codex
+
+사전수행: 클코드 스킬기준으로 버전관리되 수행전 코덱스 스킬셋 마이그레이션
+다음과 같이해야 클코드 스킬 안망치고 코덱스-로컬 용으로 변환함
+```
+순서
+- 현재 스킬 리스트업
+- 다음은 클코드용 스킬셋인데.. 이거 건들지말고 코덱스용으로 안전하게 복사해 : plugins/skill-actor-model
+
+• 복사 완료했습니다. plugins/skill-actor-model 원본은 건드리지 않았고, 코덱스용으로 안전 복사했습니다.                                                                                                                                                                                                                     
+  - 소스: plugins/skill-actor-model/skills                                                                                                                                                                           
+  - 대상: /home/psmon/.codex/skills                                                                                                                                                                                  
+  - 기존 코덱스 스킬 백업: /home/psmon/.codex/skills-backup-20260216-161748                                                                                                                                          
+  - 검증: 12개 스킬 모두 SKILL.md SHA256 일치 확인 (OK)                                                                                                                                                                                                                                                                                                                                                                                   
+  Codex가 이미 실행 중이면, 새 스킬 반영을 위해 재시작하면 됩니다. 
+```
+
+3가지 유형의 동일기능으로 구현된 액터모델 프로젝트를 개선하려고합니다.
+수행지침
+
+- AkkaTestToolkit은 블락없이(Sleep)없이 대상 클러스터 완료및 액터의 이벤트를 관찰자관점에서 수신받을수 있는데 이를 활용해 테스트중 Sleep를 통한 대기코드를 가급적 없앨것
+- 일반 유닛테스트와 AkkaToolkit으로 유닛테스트를 했을때 의도적인 블락킹이 없는 점이 AkkaTookit을 이용한 유닛테스트의 장점이며 이를 최대한 살릴것, 테스트 수행을위한 관찰자액터가 필요하면 이것을 활용하고 테스트가능한 구조로 만들것
+- skill-test/projects/sample1~100 : 넘버링된 형태의 소스는 참고하지 않습니다.
+- 각진영의 언어의 구현스펙을 존중하며 목표수행을 위해 타진영에서 구현된 좋은 패턴이 있다고하면 도입하되 일관성확보가 더 좋요합니다.
+  - skill-test/projects/sample-cluster-dotnet
+  - skill-test/projects/sample-cluster-java
+  - skill-test/projects/sample-cluster-kotlin
+
+### Kottlin Pekko Typed
+```
+kotlin-pekko-typed kotlin-pekko-typed-cluster kotlin-pekko-typed-test 스킬을 활용
+다음경로 프로젝트 개선 : skill-test/projects/sample-cluster-kotlin
+
+```
+
+### Java Akka Classic
+```
+java-akka-classic java-akka-classic-test akka-testkit java-akka-classic-cluster 스킬을 활용해서
+다음경로 프로젝트 개선 : skill-test/projects/sample-cluster-java
+```
+
+### C# Akka.NET
+```
+dotnet-akka-net dotnet-akka-net-test dotnet-akka-net-cluster 스킬을 활용해서
+다음경로 프로젝트 개선 : skill-test/projects/sample-cluster-dotnet
+```
+
+## 개선완료후 지침 (문서및 스킬업데이트)
+- skill-test/TEST-RESULT.md : 에 수행결과를 업데이트해주세요
+- skill-test/LANG-SPECS-RESULT.md : 수행과정중 발견한 언어스펙의 차이에따른 구현을 비교하는 문서를 생성하고 지속업데이트해주세요
+- plugins/skill-actor-model : 이 활동에의해 추가발견된 개념인 경우 기존 스킬셋트과 비교해 없는경우 추가업데이트및 개선하고, 스킬버전업도 함께 진행해주세요
+- 이개선 지침은 테스트와 방법과 관련된것이니 테스트관련 스킬을 주로 업데이트할것
+
+## 이 프롬프트의 실행계획
+
+Tip : 클코드는 플래닝모드선택 여부와 상관없이 플래닝을 먼저 세우고 진행할까요? 묻는데... 코덱스는 파악후 바로진행 ( 순정옵션모드일때 )
+
+```
+스킬 가이드를 확인했고, 공통 원칙은 TestProbe/within/awaitAssert 중심으로 Sleep 제거입니다. 지금부터 3개 프로젝트 테스트/액터 코드를 읽어, 최소 변경으로 동일한 관찰자 패턴을 적용하겠습니다.
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 핵심 원인 파악이 끝났습니다. 다음으로 Sleep을 이벤트 기반 대기로 바꾸기 위해 각 테스트 파일을 수정하고, 완료 후 결과 문서(TEST-RESULT, LANG-SPECS-RESULT)와 plugins/skill-actor-model의 테스트 스킬 문구를 같은 원 
+  칙으로 업데이트하겠습니다.
+
+• Explored
+  └ Read LANG-SPECS-RESULT.md, TEST-RESULT.md, SKILL.md
+    List skills
+    List skills
+    Search test|cluster|SKILL.md
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 이제 실제 코드 수정에 들어갑니다. 우선 Java는 TestKit.awaitAssert/within으로 Thread.sleep을 제거하고, Kotlin은 Typed TestKit의 awaitAssert 계열 API 확인 후 같은 방식으로 대기를 이벤트 기반으로 바꾸겠습니다.     
+
+• Explored
+  └ Read ClusterActors.Tests.csproj, build.gradle.kts
+    Search awaitAssert|awaitCond|within\( in sample-cluster-java
+    Search awaitAssert|awaitCond|within\( in sample-cluster-java
+    
+• 구현 변경 계획을 확정했습니다: Java/Kotlin은 TestKit의 awaitAssert로 대체하고, .NET은 Cluster/Collector 관찰자 액터 + 스케줄러로 Sleep/Task.Delay를 제거합니다. 지금부터 테스트 코드부터 순서대로 패치하겠습니다.                                                                                                                                                                                                                       
+• Edited skill-test/projects/sample-cluster-java/src/test/java/cluster/java/ClusterActorTest.java (+41 -24)
+
+↳ Interacted with background terminal · dotnet test skill-test/projects/sample-cluster-dotnet/ClusterActors.sln
+  └ (waited)
+
+─ Worked for 1m 51s ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Java/Kotlin 테스트는 통과했습니다. .NET 테스트가 현재 장시간 실행 중이라(무출력 대기) 새로 넣은 관찰자 로직에서 대기 누수가 있는지 확인 중입니다.
+- Sleep/고정 지연 제거:                                                                                                                                                                                            
+    - Java: Thread.sleep 제거, awaitAssert 기반으로 전환                                                                                                                                                           
+    - Kotlin: Thread.sleep 제거, TestProbe.awaitAssert 기반으로 전환                                                                                                                                               
+    - .NET: Thread.Sleep/Task.Delay 제거, AwaitAssert + 관찰자 액터(MessageCollectorActor) + scheduler 반복 publish 패턴 적용  
+                                                                   
+```
+- 코덱스 최신을 이용해본결과... 플래닝은 다소아쉽지만.. 클코드 대비 이상하게 빠르다(순차인지,멀티테스크인지 구분안되지만...진행속도(토큰고갈)가 빠름 
+- 스킬버전을 SKILL.md 자체에 업데이트하는 실수를 해서 , 다음과 같이 plugins/skill-actor-model/.claude-plugin/plugin.json 플러그인 버전업을해달라고 추가수행
+  - 모든 코드구현체 주석에 바이너리 어플버전을 주석으로 다 다는형국 

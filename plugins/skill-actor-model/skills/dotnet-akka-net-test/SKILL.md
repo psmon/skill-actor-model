@@ -46,6 +46,14 @@ Akka.NET 1.5.x 기반 프로젝트의 테스트 코드를 작성할 때 사용�
 4. 검증: `ExpectMsg`, `ExpectNoMsg`, `CreateTestProbe`, `probe.ExpectMsg`
 5. 필요 시 sender 검증: `Assert.Equal(TestActor, probe.Sender)`
 
+## 권장 대기 전략 (중요)
+
+- `Thread.Sleep` / `Task.Delay` 기반 고정 대기를 테스트 본문에서 사용하지 않습니다.
+- 우선순위는 `AwaitAssert` + `ExpectMsg*` + `ExpectNoMsg` 입니다.
+- 다중 `ActorSystem` 테스트처럼 TestKit 인스턴스 경계가 분리된 경우:
+  - 관찰자 액터(`collector`) + `TaskCompletionSource`로 \"조건 충족 시 완료\" 구조를 사용합니다.
+  - 전파 지연이 있는 PubSub는 scheduler 반복 publish 후 수신 즉시 cancel 패턴을 사용합니다.
+
 ```csharp
 using Xunit;
 

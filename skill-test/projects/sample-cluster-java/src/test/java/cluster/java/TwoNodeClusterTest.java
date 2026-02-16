@@ -29,7 +29,7 @@ class TwoNodeClusterTest {
     private static ActorSystem joiningSystem;
 
     @BeforeAll
-    static void setup() throws InterruptedException {
+    static void setup() {
         // Node 1: seed 노드 (고정 포트 25520)
         seedSystem = ActorSystem.create("TwoNodeClusterSystem",
                 ConfigFactory.load("two-node-seed"));
@@ -38,8 +38,7 @@ class TwoNodeClusterTest {
         joiningSystem = ActorSystem.create("TwoNodeClusterSystem",
                 ConfigFactory.load("two-node-joining"));
 
-        // 두 노드 모두 Up 상태가 될 때까지 폴링 대기
-        waitForClusterUp(seedSystem, 2, 15);
+        awaitClusterUp(seedSystem, 2, Duration.ofSeconds(15));
     }
 
     @AfterAll
@@ -56,25 +55,20 @@ class TwoNodeClusterTest {
         }
     }
 
-    /**
-     * 클러스터 멤버 수가 expectedMembers에 도달하고 모두 Up 상태가 될 때까지 폴링한다.
-     */
-    private static void waitForClusterUp(ActorSystem system, int expectedMembers,
-                                          int timeoutSeconds) throws InterruptedException {
-        Cluster cluster = Cluster.get(system);
-        long deadline = System.currentTimeMillis() + (timeoutSeconds * 1000L);
-        while (System.currentTimeMillis() < deadline) {
-            long upCount = StreamSupport.stream(
-                    cluster.state().getMembers().spliterator(), false)
+    private static void awaitClusterUp(ActorSystem system, int expectedMembers, Duration timeout) {
+        new TestKit(system) {{
+            awaitAssert(timeout, Duration.ofMillis(200), () -> {
+                long upCount = StreamSupport.stream(
+                        Cluster.get(system).state().getMembers().spliterator(), false)
                     .filter(m -> m.status().equals(MemberStatus.up()))
                     .count();
-            if (upCount >= expectedMembers) {
-                return;
-            }
-            Thread.sleep(500);
-        }
-        throw new RuntimeException("Cluster did not form with " +
-                expectedMembers + " Up members within " + timeoutSeconds + "s");
+
+                if (upCount < expectedMembers) {
+                    throw new AssertionError("Expected at least " + expectedMembers + " Up members but got " + upCount);
+                }
+                return null;
+            });
+        }};
     }
 
     @Test
@@ -131,16 +125,13 @@ class TwoNodeClusterTest {
 
             // Joining 노드에서 1회 증가
             remoteCounter.tell(CounterSingletonActor.Increment.INSTANCE, getRef());
-
-            // 리모트 메시지 전달 대기
-            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
-
-            // Joining 노드에서 카운트 조회
-            remoteCounter.tell(new CounterSingletonActor.GetCount(getRef()), getRef());
-
-            CounterSingletonActor.CountValue result =
-                    expectMsgClass(Duration.ofSeconds(5), CounterSingletonActor.CountValue.class);
-            assertEquals(3, result.getValue(), "Counter should be 3 after cross-node increments");
+            awaitAssert(Duration.ofSeconds(5), Duration.ofMillis(200), () -> {
+                remoteCounter.tell(new CounterSingletonActor.GetCount(getRef()), getRef());
+                CounterSingletonActor.CountValue result =
+                    expectMsgClass(Duration.ofMillis(500), CounterSingletonActor.CountValue.class);
+                assertEquals(3, result.getValue(), "Counter should be 3 after cross-node increments");
+                return null;
+            });
         }};
     }
 
@@ -158,16 +149,14 @@ class TwoNodeClusterTest {
             // 구독 완료 대기
             expectMsgEquals(Duration.ofSeconds(5), "subscribed");
 
-            // DistributedPubSub 구독 정보가 클러스터 전체에 전파될 때까지 대기
-            try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
-
-            // Seed 노드의 mediator를 통해 직접 발행 (크로스노드)
-            seedMediator.tell(
+            awaitAssert(Duration.ofSeconds(10), Duration.ofMillis(300), () -> {
+                seedMediator.tell(
                     new DistributedPubSubMediator.Publish("test-topic", "cross-node-hello"),
                     ActorRef.noSender());
 
-            // Joining 노드의 구독자가 크로스노드 메시지 수신 확인
-            expectMsgEquals(Duration.ofSeconds(10), "cross-node-hello");
+                expectMsgEquals(Duration.ofMillis(700), "cross-node-hello");
+                return null;
+            });
             expectNoMessage(Duration.ofMillis(500));
         }};
     }

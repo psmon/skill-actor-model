@@ -408,3 +408,39 @@ var upCount = cluster.State.Members.Count(m => m.Status == MemberStatus.Up);
 | JMX MBean 충돌 | 동일 JVM에 같은 이름의 2개 ActorSystem 기동 | `jmx.multi-mbeans-in-same-jvm = on` | Java, Kotlin |
 | CRLF 줄바꿈 | WSL2에서 Windows 파일시스템의 CRLF 줄바꿈 | `sed -i 's/\r$//' gradlew` | Kotlin (Gradle wrapper) |
 | xUnit1031 경고 | `.GetAwaiter().GetResult()` 동기 블로킹 호출 | `async Task` + `await` 비동기 전환 | C# |
+
+---
+
+## 2026-02-16 테스트 대기 전략 비교 (Sleep 제거 관점)
+
+이번 개선에서 공통 목표는 "고정 시간 Sleep 제거"였고, 언어/테스트킷별로 다음 패턴을 사용했다.
+
+### Java Akka Classic (akka-testkit)
+- 사용 패턴: `awaitAssert(max, interval, assertion)` + `expectMsg*`
+- 적용 포인트:
+  - 클러스터 Up 대기: 폴링 + `Thread.sleep` → `awaitAssert`
+  - 크로스노드 카운터 검증: 고정 대기 제거 후 `awaitAssert` 내부 재검증
+  - PubSub 전파: 고정 5초 대기 제거, `awaitAssert` 내부 publish+expect 반복
+- 장점: Classic TestKit이 retry 루프를 내장해 별도 대기 스레드 코드가 불필요.
+
+### Kotlin Pekko Typed (ActorTestKit/TestProbe)
+- 사용 패턴: `TestProbe.awaitAssert(max, interval) { ... }`
+- 적용 포인트:
+  - 클러스터 Up 대기: `Thread.sleep` 폴링 제거
+  - Receptionist 디스커버리: 빈 Listing 가능성을 `awaitAssert`로 흡수
+  - PubSub 전파: publish/expect를 `awaitAssert`로 감싸 고정 대기 제거
+- 장점: Typed TestProbe에서 await 계열 API를 직접 제공해 타입 안전 검증 흐름 유지.
+
+### C# Akka.NET (Akka.TestKit.Xunit2 + 관찰자 액터)
+- 사용 패턴:
+  - 단일 노드: `AwaitAssert`로 클러스터 Up 확인
+  - 2노드: `MessageCollectorActor` + `TaskCompletionSource` 기반 이벤트 대기
+  - PubSub 전파: scheduler 반복 publish + collector 수신 완료 시 cancel
+- 적용 포인트:
+  - `Thread.Sleep`/`Task.Delay` 제거
+  - 테스트 흐름을 메시지 수신 완료 조건으로 전환
+- 장점: TestKit이 닿지 않는 2-system 픽스처 영역도 관찰자 액터로 논블로킹 구조화 가능.
+
+### 통합 결론
+- 세 구현 모두 "고정 시간 블로킹 대기"를 제거하고, "조건 기반 재시도/이벤트 수신"으로 통일 가능.
+- Kotlin/Java는 TestKit await API가 중심, .NET은 다중 시스템 테스트에서 관찰자 액터 패턴이 특히 유효했다.

@@ -45,15 +45,16 @@ class TwoNodeClusterTest {
         }
 
         private fun waitForClusterUp(testKit: ActorTestKit, expectedMembers: Int, timeoutSeconds: Int) {
-            val cluster = Cluster.get(testKit.system())
-            val deadline = System.currentTimeMillis() + (timeoutSeconds * 1000L)
-            while (System.currentTimeMillis() < deadline) {
-                val upCount = cluster.state().members.count { it.status() == MemberStatus.up() }
-                if (upCount >= expectedMembers) return
-                Thread.sleep(500)
+            val observer = testKit.createTestProbe<String>()
+            observer.awaitAssert(Duration.ofSeconds(timeoutSeconds.toLong()), Duration.ofMillis(200)) {
+                val upCount = Cluster.get(testKit.system()).state().members.count {
+                    it.status() == MemberStatus.up()
+                }
+                require(upCount >= expectedMembers) {
+                    "Expected at least $expectedMembers Up members but got $upCount"
+                }
+                "cluster-ready"
             }
-            throw RuntimeException(
-                "Cluster did not form with $expectedMembers members within ${timeoutSeconds}s")
         }
     }
 
@@ -103,26 +104,29 @@ class TwoNodeClusterTest {
         counter.tell(Increment)
 
         // Joining 노드에서 Receptionist를 통해 카운터 디스커버리
-        Thread.sleep(2000) // Receptionist 전파 대기
-
         val listingProbe = joiningTestKit.createTestProbe<Receptionist.Listing>()
         joiningTestKit.system().receptionist().tell(
             Receptionist.subscribe(counterKey, listingProbe.ref())
         )
 
-        val listing = listingProbe.expectMessageClass(Receptionist.Listing::class.java)
-        val remoteCounter = listing.getServiceInstances(counterKey).first()
+        val remoteCounter = listingProbe.awaitAssert(Duration.ofSeconds(10), Duration.ofMillis(200)) {
+            val listing = listingProbe.receiveMessage(Duration.ofMillis(500))
+            val instances = listing.getServiceInstances(counterKey)
+            require(instances.isNotEmpty()) { "Counter service is not yet discoverable on joining node" }
+            instances.first()
+        }
 
         // Joining 노드에서 1회 증가
         remoteCounter.tell(Increment)
-        Thread.sleep(500) // 리모트 메시지 전달 대기
 
         // Joining 노드에서 카운트 조회
         val resultProbe = joiningTestKit.createTestProbe<CounterCommand>()
-        remoteCounter.tell(GetCount(resultProbe.ref()))
-
-        val result = resultProbe.expectMessageClass(CountValue::class.java)
-        assertEquals(3, result.value, "Counter should be 3 after cross-node increments")
+        resultProbe.awaitAssert(Duration.ofSeconds(5), Duration.ofMillis(200)) {
+            remoteCounter.tell(GetCount(resultProbe.ref()))
+            val result = resultProbe.expectMessageClass(CountValue::class.java, Duration.ofMillis(500))
+            assertEquals(3, result.value, "Counter should be 3 after cross-node increments")
+            result
+        }
     }
 
     @Test
@@ -139,13 +143,10 @@ class TwoNodeClusterTest {
         joiningPubSub.tell(SubscribeToTopic("cross-topic", subscriberProbe.ref()))
         seedPubSub.tell(SubscribeToTopic("cross-topic", seedDummyProbe.ref()))
 
-        // Topic 클러스터 전파 대기 (양쪽 Topic 액터가 Receptionist를 통해 서로를 발견)
-        Thread.sleep(5000)
-
-        // Seed 노드에서 발행
-        seedPubSub.tell(PublishMessage("cross-topic", "cross-node-hello"))
-
-        // Joining 노드의 구독자가 크로스노드 메시지 수신 확인
-        subscriberProbe.expectMessage(Duration.ofSeconds(10), "cross-node-hello")
+        subscriberProbe.awaitAssert(Duration.ofSeconds(10), Duration.ofMillis(300)) {
+            seedPubSub.tell(PublishMessage("cross-topic", "cross-node-hello"))
+            subscriberProbe.expectMessage(Duration.ofMillis(700), "cross-node-hello")
+            "delivered"
+        }
     }
 }

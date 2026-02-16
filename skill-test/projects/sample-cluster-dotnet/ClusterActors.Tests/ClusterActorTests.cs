@@ -28,8 +28,11 @@ public class ClusterActorTests : TestKit
         // Single-node cluster: join self
         var cluster = Cluster.Get(Sys);
         cluster.Join(cluster.SelfAddress);
-        // Wait for cluster to form
-        Thread.Sleep(3000);
+        AwaitAssert(() =>
+        {
+            var upCount = cluster.State.Members.Count(m => m.Status == MemberStatus.Up);
+            Assert.True(upCount >= 1, $"Expected at least 1 Up member but got {upCount}");
+        }, TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(200));
     }
 
     [Fact]

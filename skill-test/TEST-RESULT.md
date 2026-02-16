@@ -946,3 +946,26 @@ Passed!  - Failed: 0, Passed: 7, Skipped: 0, Total: 7
 | 클러스터 형성 대기 | `StreamSupport` 폴링 (Scala Iterable) | `.count()` 폴링 (Kotlin 확장) | `.Count()` 폴링 (LINQ) |
 | 2-Node 테스트 수 | 4 | 4 | 4 |
 | **총 테스트 수** | **7** | **6** | **7** |
+
+---
+
+## 2026-02-16 테스트 개선 (Sleep 제거 중심)
+
+대상 프로젝트:
+- `skill-test/projects/sample-cluster-dotnet`
+- `skill-test/projects/sample-cluster-java`
+- `skill-test/projects/sample-cluster-kotlin`
+
+핵심 개선:
+- 테스트 코드의 `Thread.sleep` / `Task.Delay` 제거
+- TestKit 기반 `awaitAssert`, `expectMessage`, `expectNoMessage` 중심으로 대기 로직 전환
+- .NET 2-node 테스트는 폴링 딜레이 대신 `MessageCollectorActor` + scheduler 기반 반복 publish로 안정화
+
+실행 결과:
+1. Java Akka Classic: `./gradlew test` → **PASS (5 passed)**
+2. Kotlin Pekko Typed: `./gradlew test` → **PASS (6 passed)**
+3. C# Akka.NET: `dotnet test ClusterActors.sln --no-restore --disable-build-servers` → **PASS (7 passed)**
+
+비고:
+- `sample1~100` 번호형 프로젝트는 이번 개선 범위에서 제외.
+- 클러스터 형성/전파 대기는 고정 Sleep 대신 이벤트/어설션 기반으로 통일.

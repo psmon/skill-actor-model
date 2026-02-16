@@ -3,7 +3,7 @@ package cluster.kotlin
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.testkit.typed.javadsl.ActorTestKit
 import org.apache.pekko.actor.typed.ActorRef
-import org.apache.pekko.actor.typed.pubsub.Topic
+import org.apache.pekko.cluster.MemberStatus
 import org.apache.pekko.cluster.typed.Cluster
 import org.apache.pekko.cluster.typed.Join
 import org.junit.jupiter.api.AfterAll
@@ -38,14 +38,26 @@ class ClusterActorTest {
             // Single-node cluster: join self
             val cluster = Cluster.get(testKit.system())
             cluster.manager().tell(Join.create(cluster.selfMember().address()))
-            // Wait for cluster to form
-            Thread.sleep(3000)
+            awaitClusterUp(testKit, 1, Duration.ofSeconds(10))
         }
 
         @JvmStatic
         @AfterAll
         fun teardown() {
             testKit.shutdownTestKit()
+        }
+
+        private fun awaitClusterUp(testKit: ActorTestKit, expectedMembers: Int, timeout: Duration) {
+            val observer = testKit.createTestProbe<String>()
+            observer.awaitAssert(timeout, Duration.ofMillis(200)) {
+                val upCount = Cluster.get(testKit.system()).state().members.count {
+                    it.status() == MemberStatus.up()
+                }
+                require(upCount >= expectedMembers) {
+                    "Expected at least $expectedMembers Up members but got $upCount"
+                }
+                "cluster-ready"
+            }
         }
     }
 
@@ -71,13 +83,10 @@ class ClusterActorTest {
         // Subscribe
         pubSubManager.tell(SubscribeToTopic("test-topic", subscriberProbe.ref()))
 
-        // Wait for subscription to propagate
-        Thread.sleep(1000)
-
-        // Publish
-        pubSubManager.tell(PublishMessage("test-topic", "hello-cluster"))
-
-        // Verify subscriber received the message
-        subscriberProbe.expectMessage(Duration.ofSeconds(5), "hello-cluster")
+        subscriberProbe.awaitAssert(Duration.ofSeconds(5), Duration.ofMillis(200)) {
+            pubSubManager.tell(PublishMessage("test-topic", "hello-cluster"))
+            subscriberProbe.expectMessage(Duration.ofMillis(700), "hello-cluster")
+            "delivered"
+        }
     }
 }
