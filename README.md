@@ -30,14 +30,16 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 - Pekko 의 경우 2.6x 기반 1.1.0에서 어느정도 안정 버전을 갖추어 채택 - 
 - 오픈소스는 버전체크 부지런해야 활용가능한것같으며 스킬에 이용되는 기반버전도 함께 올릴예정
 
-|Akka| Pekko  | Akka.NET |
-|---|--------|---|
-|2.6.x| 1.0.x~ |1.4.x~ |
-|2.7.x| 1.3.x~ |1.5.x~ |
+| Akka  | Pekko  | Akka.NET |
+|-------|--------|----------|
+| 2.5.x | -      | 1.5.x    |
+| 2.6.x | 1.0.x~ | -        |
+| 2.7.x | 1.3.x~ | -        |
 
 #### TypedActor의 특징
-- Typed Actor는 2.6에 출시, Pekko-Kotlin 버전으로 다루는중 - 이벤트 발신/수신자 약손된 Type이 안맞는경우 컴파일타임에 오류를냄, 구현과정에서 이것을 준수하느라 약간의 스트레스
-- Classic Actor 이용시에는 이벤트 전송 Type이 자유로운 장점이 있지만 단점이 될수 있기때문에 설계시 메시지 프로토콜을 더 명확히 정의하는것이 중요
+- Typed Actor는 2.6에 출시 Pekko-Kotlin 버전으로 다루는중 - 이벤트 발신/수신자 약손된 Type이 안맞는경우 컴파일타임에 오류를냄, 클래식에 익숙하다고 하면 Typed준수하느라 약간의 스트레스 알고보니 Behavior패턴의 일종으로 이 패턴에 익숙해야 강력해짐
+- Classic Actor(Untyped Actor) 이용시에는 이벤트 전송 Type이 자유로운 장점이 있지만 단점이 될수 있기때문에 설계시 메시지 프로토콜을 더 명확히 정의하는것이 중요
+- Akka.net 은 Untyped Actor가 주류, Typed Actor는 미지원인것으로 파악됨
 
 링크 : https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.3.html
 
