@@ -969,3 +969,205 @@ Passed!  - Failed: 0, Passed: 7, Skipped: 0, Total: 7
 비고:
 - `sample1~100` 번호형 프로젝트는 이번 개선 범위에서 제외.
 - 클러스터 형성/전파 대기는 고정 Sleep 대신 이벤트/어설션 기반으로 통일.
+
+---
+
+## 2026-02-16 K8s 로컬 클러스터 인프라 구성
+
+### 목적
+
+3개 클러스터 프로젝트(Kotlin Pekko, Java Akka, C# Akka.NET)를 Docker Desktop Kubernetes 환경에서 2노드 클러스터로 구동하기 위한 인프라 구성.
+
+### 아키텍처 결정
+
+**StatefulSet + Headless Service + seed-nodes 패턴** 채택 (Management Bootstrap 불필요)
+
+- `podManagementPolicy: OrderedReady` → pod-0(Seed) 먼저 기동, pod-1(Joining) 이후 기동
+- Headless Service → 안정적 DNS: `{pod}-{ordinal}.{service}.default.svc.cluster.local`
+- `imagePullPolicy: Never` → 로컬 Docker 이미지 직접 사용
+- HOCON 환경변수 fallback 패턴 → 로컬 개발과 K8s 양립
+
+### 변경 내역
+
+#### 공통: Main 클래스 헤드리스 모드 전환
+
+각 프로젝트의 Main 클래스가 `ActorSystem` 종료까지 블로킹하도록 개선:
+
+| 프로젝트 | 블로킹 API | 변경 전 |
+|----------|-----------|---------|
+| Kotlin Pekko | `system.whenTerminated.toCompletableFuture().join()` | println만 하고 즉시 종료 |
+| Java Akka | `system.getWhenTerminated().toCompletableFuture().join()` | ActorSystem 생성 후 즉시 종료 |
+| C# Akka.NET | `await system.WhenTerminated` | 엔트리포인트 없음 (Library 프로젝트) |
+
+#### 공통: application.conf 환경변수 주입
+
+HOCON fallback 패턴으로 기본값과 환경변수 오버라이드를 양립:
+
+```hocon
+# 예시 (Kotlin Pekko)
+pekko.remote.artery.canonical.hostname = "127.0.0.1"
+pekko.remote.artery.canonical.hostname = ${?CLUSTER_HOSTNAME}
+```
+
+- `CLUSTER_HOSTNAME`, `CLUSTER_PORT`, `CLUSTER_SEED_NODES`, `CLUSTER_MIN_NR` 4개 환경변수 통일
+- `coordinated-shutdown.exit-jvm = on` (JVM) / `exit-clr = on` (.NET) 추가
+- `allow-java-serialization = on` 추가 (Java/Kotlin)
+
+#### 공통: infra/ 디렉토리 생성
+
+각 프로젝트에 Dockerfile + k8s-cluster.yaml 생성:
+
+| 프로젝트 | 베이스 이미지 | 리모팅 포트 | 프로토콜 |
+|----------|-------------|-----------|---------|
+| Kotlin Pekko | `gradle:8.5-jdk17` → `eclipse-temurin:17-jre` | 25520 | `pekko://` |
+| Java Akka | `gradle:8.5-jdk17` → `eclipse-temurin:17-jre` | 2551 | `akka://` |
+| C# Akka.NET | `dotnet/sdk:9.0` → `dotnet/runtime:9.0` | 4053 | `akka.tcp://` |
+
+#### C# 추가: Exe 변환 + Program.cs
+
+- `ClusterActors.csproj`에 `<OutputType>Exe</OutputType>` 추가
+- `Akka.Remote` NuGet 패키지 추가 (dot-netty.tcp 트랜스포트용)
+- `Program.cs` 신규 생성 (코드 레벨 HOCON 구성 + 환경변수 오버라이드)
+
+### 유닛테스트 결과
+
+기존 테스트에 영향 없음을 확인:
+
+| 프로젝트 | 테스트 수 | 결과 |
+|----------|----------|------|
+| Kotlin Pekko | 6 (1-Node: 2, 2-Node: 4) | PASS |
+| Java Akka | 7 (1-Node: 3, 2-Node: 4) | PASS |
+| C# Akka.NET | 7 (1-Node: 3, 2-Node: 4) | PASS |
+
+### K8s 배포 방법
+
+```bash
+# 1. Docker 이미지 빌드 (각 프로젝트 디렉토리에서)
+docker build -f infra/Dockerfile -t sample-cluster-kotlin:latest .
+docker build -f infra/Dockerfile -t sample-cluster-java:latest .
+docker build -f infra/Dockerfile -t sample-cluster-dotnet:latest .
+
+# 2. K8s 배포
+kubectl apply -f infra/k8s-cluster.yaml
+
+# 3. 클러스터 형성 확인
+kubectl get pods -w           # pod-0 Running → pod-1 Running
+kubectl logs {pod-name}       # "Member is Up" 로그 × 2
+
+# 4. 정리
+kubectl delete -f infra/k8s-cluster.yaml
+```
+
+### K8s 실제 배포 테스트 결과 (2026-02-16)
+
+> 환경: Docker Desktop Kubernetes (WSL2), `imagePullPolicy: Never`
+
+#### 트러블슈팅: HOCON `${?ENV_VAR}` → 코드 레벨 오버라이드 전환
+
+초기 구현에서는 `application.conf`에 HOCON `${?ENV_VAR}` fallback 패턴을 사용했으나, `seed-nodes` 같은 리스트 타입 설정에서 환경변수가 문자열로 파싱되어 타입 오류 발생:
+
+```
+ConfigException$ValidationFailed: pekko.cluster.seed-nodes: Wrong value type, expecting: list but got: string
+```
+
+**해결**: 3개 프로젝트 모두 Main 클래스에서 `ConfigFactory.parseString(overrides).withFallback(ConfigFactory.load())` 패턴으로 전환. 환경변수 값을 HOCON 문자열에 직접 임베딩하여 리스트 리터럴로 올바르게 파싱.
+
+#### 트러블슈팅: Canonical Hostname ↔ Seed-nodes 주소 불일치
+
+Pod IP를 canonical hostname으로 사용하면 seed-nodes 주소(DNS 이름)와 불일치하여 Handshake 실패:
+
+```
+Dropping Handshake Request addressed to unknown local address [...@pekko-cluster-0.pekko-cluster...]. Local address is [...@10.1.0.29:25520]
+```
+
+**해결**: `CLUSTER_HOSTNAME`을 `status.podIP` 대신 `$(POD_NAME).{service}.default.svc.cluster.local` K8s 환경변수 확장으로 변경.
+
+#### Kotlin Pekko Typed — PASS
+
+```
+=== pekko-cluster-0 (Seed) ===
+Remoting started; listening on [pekko://ClusterSystem@pekko-cluster-0.pekko-cluster.default.svc.cluster.local:25520]
+Cluster Node [...] - Starting up, Pekko version [1.1.3] ...
+Cluster Node [...] - Started up successfully
+Cluster Node [...] - Node [...pekko-cluster-0...] is JOINING itself and forming new cluster
+Cluster system started: ClusterSystem
+Cluster Node [...] - Node [...pekko-cluster-1...] is JOINING, roles [dc-default]
+Cluster Node [...] - Leader is moving node [...pekko-cluster-0...] to [Up]
+Cluster Node [...] - Leader is moving node [...pekko-cluster-1...] to [Up]
+Member is Up: Member(pekko://ClusterSystem@pekko-cluster-0.pekko-cluster.default.svc.cluster.local:25520, Up)
+Member is Up: Member(pekko://ClusterSystem@pekko-cluster-1.pekko-cluster.default.svc.cluster.local:25520, Up)
+
+=== pekko-cluster-1 (Joining) ===
+Remoting started; listening on [pekko://ClusterSystem@pekko-cluster-1.pekko-cluster.default.svc.cluster.local:25520]
+Cluster Node [...] - Started up successfully
+Cluster system started: ClusterSystem
+Cluster Node [...] - Welcome from [...pekko-cluster-0...]
+Member is Up: Member(pekko://ClusterSystem@pekko-cluster-0.pekko-cluster.default.svc.cluster.local:25520, Up)
+Member is Up: Member(pekko://ClusterSystem@pekko-cluster-1.pekko-cluster.default.svc.cluster.local:25520, Up)
+```
+
+#### Java Akka Classic — PASS
+
+```
+=== akka-cluster-0 (Seed) ===
+Remoting started with transport [Artery tcp]; listening on [akka://ClusterSystem@akka-cluster-0.akka-cluster.default.svc.cluster.local:2551]
+Cluster Node [...] - Starting up, Akka version [2.7.0] ...
+Cluster Node [...] - Started up successfully
+Cluster Node [...] - Node [...akka-cluster-0...] is JOINING itself and forming new cluster
+Cluster system started: ClusterSystem
+Cluster Node [...] - Received InitJoin from [...akka-cluster-1...]
+Cluster Node [...] - Node [...akka-cluster-1...] is JOINING
+Cluster Node [...] - Leader is moving node [...akka-cluster-0...] to [Up]
+Cluster Node [...] - Leader is moving node [...akka-cluster-1...] to [Up]
+Member is Up: Member(akka://ClusterSystem@akka-cluster-0.akka-cluster.default.svc.cluster.local:2551, Up)
+Member is Up: Member(akka://ClusterSystem@akka-cluster-1.akka-cluster.default.svc.cluster.local:2551, Up)
+
+=== akka-cluster-1 (Joining) ===
+Remoting started with transport [Artery tcp]; listening on [akka://ClusterSystem@akka-cluster-1.akka-cluster.default.svc.cluster.local:2551]
+Cluster Node [...] - Started up successfully
+Cluster system started: ClusterSystem
+Cluster Node [...] - Welcome from [...akka-cluster-0...]
+Member is Up: Member(akka://ClusterSystem@akka-cluster-0.akka-cluster.default.svc.cluster.local:2551, Up)
+Member is Up: Member(akka://ClusterSystem@akka-cluster-1.akka-cluster.default.svc.cluster.local:2551, Up)
+```
+
+#### C# Akka.NET — PASS
+
+```
+=== akkanet-cluster-0 (Seed) ===
+Remoting started; listening on [akka.tcp://ClusterSystem@akkanet-cluster-0.akkanet-cluster.default.svc.cluster.local:4053]
+Cluster Node [...] - Starting up...
+Cluster Node [...] - Started up successfully
+Cluster system started: ClusterSystem
+Cluster Node [...] - Node [...akkanet-cluster-0...] is JOINING itself and forming a new cluster
+Cluster Node [...] - Received InitJoin from [...akkanet-cluster-1...]
+Cluster Node [...] - Node [...akkanet-cluster-1...] is JOINING
+Cluster Node [...] - Leader is moving node [...akkanet-cluster-0...] to [Up]
+Cluster Node [...] - Leader is moving node [...akkanet-cluster-1...] to [Up]
+Member is Up: Member(address = akka.tcp://ClusterSystem@akkanet-cluster-0.akkanet-cluster.default.svc.cluster.local:4053, status = Up)
+Member is Up: Member(address = akka.tcp://ClusterSystem@akkanet-cluster-1.akkanet-cluster.default.svc.cluster.local:4053, status = Up)
+
+=== akkanet-cluster-1 (Joining) ===
+Remoting started; listening on [akka.tcp://ClusterSystem@akkanet-cluster-1.akkanet-cluster.default.svc.cluster.local:4053]
+Cluster Node [...] - Started up successfully
+Cluster system started: ClusterSystem
+Cluster Node [...] - Welcome from [...akkanet-cluster-0...]
+Member is Up: Member(address = akka.tcp://ClusterSystem@akkanet-cluster-0.akkanet-cluster.default.svc.cluster.local:4053, status = Up)
+Member is Up: Member(address = akka.tcp://ClusterSystem@akkanet-cluster-1.akkanet-cluster.default.svc.cluster.local:4053, status = Up)
+```
+
+#### K8s 배포 종합
+
+| 프로젝트 | StatefulSet | 프로토콜 | 포트 | 클러스터 형성 | 양쪽 노드 Member Up |
+|----------|------------|---------|------|-------------|-------------------|
+| Kotlin Pekko Typed | `pekko-cluster` (2 replicas) | `pekko://` | 25520 | PASS | PASS |
+| Java Akka Classic | `akka-cluster` (2 replicas) | `akka://` | 2551 | PASS | PASS |
+| C# Akka.NET | `akkanet-cluster` (2 replicas) | `akka.tcp://` | 4053 | PASS | PASS |
+
+핵심 검증 포인트:
+- **OrderedReady**: pod-0(Seed) → pod-1(Joining) 순서 기동 확인
+- **Headless Service DNS**: `{pod}.{service}.default.svc.cluster.local` 주소 해석 정상
+- **Seed-nodes Join**: pod-1이 seed(pod-0)에 InitJoin → Welcome 수신 → 클러스터 합류
+- **Leader Election**: pod-0이 리더로 선출되어 양쪽 노드를 Up으로 전환
+- **ClusterListenerActor**: 양쪽 노드 모두에서 "Member is Up" × 2 로그 확인
+- **coordinated-shutdown**: `kubectl delete` 시 graceful leave 후 종료

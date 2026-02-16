@@ -380,6 +380,159 @@ spec:
 
 ---
 
+## Type C: StatefulSet + seed-nodes (로컬 K8s / 간이 배포)
+
+Management Bootstrap 없이 StatefulSet의 ordered startup과 seed-nodes 직접 지정으로 클러스터를 구성하는 방법입니다. Docker Desktop Kubernetes 등 로컬 환경에서 간단히 테스트할 때 적합합니다.
+
+### 특징
+
+- Akka.Management 의존성 불필요 (기본 클러스터 + Remote 의존성만 사용)
+- `podManagementPolicy: OrderedReady` → pod-0(Seed)이 먼저 기동
+- 코드 레벨 `Environment.GetEnvironmentVariable()` → 로컬 개발과 K8s 양립
+- `imagePullPolicy: Never` → 로컬 빌드 이미지 직접 사용
+- **K8s canonical hostname은 StatefulSet DNS 이름 사용** (Pod IP 사용 금지)
+
+> **HOCON `${?ENV_VAR}` 주의 (JVM/C# 공통)**: HOCON의 `${?ENV_VAR}` fallback은 문자열/숫자 타입에는 동작하지만, **리스트 타입(`seed-nodes`)에는 문자열로 파싱되어 타입 오류가 발생**합니다. 이 문제는 Akka.NET뿐 아니라 JVM(Akka Classic, Pekko Typed)에서도 동일합니다. 따라서 환경변수 기반 설정은 코드 레벨에서 HOCON 문자열을 동적으로 조합하는 패턴을 사용합니다.
+
+> **canonical hostname과 seed-nodes 일치 필수**: K8s에서 `status.podIP`를 canonical hostname으로 사용하면 seed-nodes의 DNS 주소와 불일치하여 클러스터 조인이 실패합니다. 반드시 StatefulSet DNS 이름(`$(POD_NAME).{service}.default.svc.cluster.local`)을 사용해야 합니다.
+
+### C# Program.cs (환경변수 기반 HOCON)
+
+```csharp
+var hostname = Environment.GetEnvironmentVariable("CLUSTER_HOSTNAME") ?? "127.0.0.1";
+var port = Environment.GetEnvironmentVariable("CLUSTER_PORT") ?? "0";
+var seedNodes = Environment.GetEnvironmentVariable("CLUSTER_SEED_NODES") ?? "";
+var minNr = Environment.GetEnvironmentVariable("CLUSTER_MIN_NR") ?? "1";
+
+var seedNodesHocon = string.IsNullOrEmpty(seedNodes)
+    ? "seed-nodes = []"
+    : $"seed-nodes = [{seedNodes}]";
+
+var hocon = $@"
+akka {{
+    actor.provider = cluster
+    remote {{
+        dot-netty.tcp {{
+            hostname = ""{hostname}""
+            port = {port}
+        }}
+    }}
+    cluster {{
+        {seedNodesHocon}
+        min-nr-of-members = {minNr}
+        downing-provider-class = ""Akka.Cluster.SBR.SplitBrainResolverProvider, Akka.Cluster""
+    }}
+    coordinated-shutdown.exit-clr = on
+}}
+";
+
+var config = ConfigurationFactory.ParseString(hocon);
+var system = ActorSystem.Create("ClusterSystem", config);
+system.ActorOf(Props.Create(() => new ClusterListenerActor(system.DeadLetters)), "clusterListener");
+await system.WhenTerminated;
+```
+
+> **코드 레벨 HOCON 조합**: `Environment.GetEnvironmentVariable()`로 환경변수를 읽어 HOCON 문자열을 동적으로 조합합니다. HOCON `${?ENV_VAR}` fallback은 리스트 타입(`seed-nodes`)에서 타입 오류가 발생하므로(JVM/C# 공통), 코드 레벨 조합이 안전합니다.
+
+### csproj 변경 (Library → Exe)
+
+```xml
+<PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+</PropertyGroup>
+<ItemGroup>
+    <PackageReference Include="Akka.Remote" Version="1.5.60" />
+    <!-- Akka.Cluster, Akka.Cluster.Tools 등 기존 패키지 유지 -->
+</ItemGroup>
+```
+
+### Dockerfile (멀티스테이지)
+
+```dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+COPY MyApp/MyApp.csproj MyApp/
+RUN dotnet restore MyApp/MyApp.csproj
+COPY MyApp/ MyApp/
+RUN dotnet publish MyApp/MyApp.csproj -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/runtime:9.0
+WORKDIR /app
+COPY --from=build /app/publish ./
+EXPOSE 4053
+ENTRYPOINT ["dotnet", "MyApp.dll"]
+```
+
+### k8s-cluster.yaml (Headless Service + StatefulSet)
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: akkanet-cluster
+spec:
+  clusterIP: None
+  selector:
+    app: akkanet-cluster
+  ports:
+    - name: remoting
+      port: 4053
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: akkanet-cluster
+spec:
+  serviceName: akkanet-cluster
+  replicas: 2
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: akkanet-cluster
+  template:
+    metadata:
+      labels:
+        app: akkanet-cluster
+    spec:
+      containers:
+        - name: akkanet-node
+          image: my-akka-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4053
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CLUSTER_HOSTNAME
+              value: "$(POD_NAME).akkanet-cluster.default.svc.cluster.local"
+            - name: CLUSTER_PORT
+              value: "4053"
+            - name: CLUSTER_SEED_NODES
+              value: '"akka.tcp://ClusterSystem@akkanet-cluster-0.akkanet-cluster.default.svc.cluster.local:4053"'
+            - name: CLUSTER_MIN_NR
+              value: "2"
+          readinessProbe:
+            tcpSocket:
+              port: 4053
+            initialDelaySeconds: 15
+            periodSeconds: 5
+```
+
+### Type A/B와의 비교
+
+| 항목 | Type A/B (Bootstrap) | Type C (seed-nodes) |
+|------|---------------------|---------------------|
+| 추가 NuGet | Akka.Management, Discovery | Akka.Remote のみ |
+| 디스커버리 | 자동 (Config/K8s API) | 수동 (seed-nodes 환경변수) |
+| 노드 추가 | 자동 발견 | seed-nodes 재설정 필요 |
+| 적합 환경 | 프로덕션, 동적 스케일링 | 로컬 개발, 고정 노드 수 |
+| 복잡도 | 높음 (RBAC, Management HTTP) | 낮음 |
+
+---
+
 ## 핵심 주의사항
 
 | 항목 | 설명 |

@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: akkanet-cluster
+  labels:
+    app: akkanet-cluster
+spec:
+  clusterIP: None
+  selector:
+    app: akkanet-cluster
+  ports:
+    - name: remoting
+      port: 4053
+      targetPort: 4053
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: akkanet-cluster
+spec:
+  serviceName: akkanet-cluster
+  replicas: 2
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: akkanet-cluster
+  template:
+    metadata:
+      labels:
+        app: akkanet-cluster
+    spec:
+      containers:
+        - name: akkanet-node
+          image: sample-cluster-dotnet:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4053
+              name: remoting
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CLUSTER_HOSTNAME
+              value: "$(POD_NAME).akkanet-cluster.default.svc.cluster.local"
+            - name: CLUSTER_PORT
+              value: "4053"
+            - name: CLUSTER_SEED_NODES
+              value: '"akka.tcp://ClusterSystem@akkanet-cluster-0.akkanet-cluster.default.svc.cluster.local:4053"'
+            - name: CLUSTER_MIN_NR
+              value: "2"
+          readinessProbe:
+            tcpSocket:
+              port: 4053
+            initialDelaySeconds: 15
+            periodSeconds: 5

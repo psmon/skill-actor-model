@@ -398,6 +398,161 @@ spec:
 
 ---
 
+## Type C: StatefulSet + seed-nodes (로컬 K8s / 간이 배포)
+
+Management Bootstrap 없이 StatefulSet의 ordered startup과 seed-nodes 직접 지정으로 클러스터를 구성하는 방법입니다. Docker Desktop Kubernetes 등 로컬 환경에서 간단히 테스트할 때 적합합니다.
+
+### 특징
+
+- Management/Bootstrap 의존성 불필요 (기본 클러스터 의존성만 사용)
+- `podManagementPolicy: OrderedReady` → pod-0(Seed)이 먼저 기동
+- 코드 레벨 `ConfigFactory.parseString(overrides)` → 로컬 개발과 K8s 양립
+- `imagePullPolicy: Never` → 로컬 빌드 이미지 직접 사용
+- **K8s canonical hostname은 StatefulSet DNS 이름 사용** (Pod IP 사용 금지)
+
+> **HOCON `${?ENV_VAR}` 주의**: HOCON의 `${?ENV_VAR}` fallback은 문자열/숫자 타입에는 동작하지만, **리스트 타입(`seed-nodes`)에는 문자열로 파싱되어 타입 오류가 발생**합니다. 따라서 환경변수 기반 설정은 코드 레벨 `ConfigFactory.parseString()` 오버라이드 패턴을 사용합니다.
+
+> **canonical hostname과 seed-nodes 일치 필수**: K8s에서 `status.podIP`를 canonical hostname으로 사용하면 seed-nodes의 DNS 주소와 불일치하여 클러스터 조인이 실패합니다. 반드시 StatefulSet DNS 이름(`$(POD_NAME).{service}.default.svc.cluster.local`)을 사용해야 합니다.
+
+### HOCON 설정 (순수 기본값)
+
+```hocon
+akka {
+  actor {
+    provider = cluster
+    allow-java-serialization = on
+  }
+  remote.artery {
+    canonical.hostname = "127.0.0.1"
+    canonical.port = 0
+  }
+  cluster {
+    seed-nodes = []
+    min-nr-of-members = 1
+    downing-provider-class = "akka.cluster.sbr.SplitBrainResolverProvider"
+  }
+  coordinated-shutdown.exit-jvm = on
+}
+```
+
+### Java Main (코드 레벨 환경변수 오버라이드)
+
+```java
+import akka.actor.ActorSystem;
+import com.typesafe.config.Config;
+import com.typesafe.config.ConfigFactory;
+
+public class Main {
+    public static void main(String[] args) {
+        StringBuilder overrides = new StringBuilder();
+        String hostname = System.getenv("CLUSTER_HOSTNAME");
+        if (hostname != null) overrides.append("akka.remote.artery.canonical.hostname = \"")
+            .append(hostname).append("\"\n");
+        String port = System.getenv("CLUSTER_PORT");
+        if (port != null) overrides.append("akka.remote.artery.canonical.port = ")
+            .append(port).append("\n");
+        String seedNodes = System.getenv("CLUSTER_SEED_NODES");
+        if (seedNodes != null) overrides.append("akka.cluster.seed-nodes = ")
+            .append(seedNodes).append("\n");
+        String minNr = System.getenv("CLUSTER_MIN_NR");
+        if (minNr != null) overrides.append("akka.cluster.min-nr-of-members = ")
+            .append(minNr).append("\n");
+
+        Config config = ConfigFactory.parseString(overrides.toString())
+            .withFallback(ConfigFactory.load());
+
+        ActorSystem system = ActorSystem.create("ClusterSystem", config);
+        system.actorOf(ClusterListenerActor.props(system.deadLetters()), "clusterListener");
+        system.getWhenTerminated().toCompletableFuture().join();
+    }
+}
+```
+
+### Dockerfile (멀티스테이지)
+
+```dockerfile
+FROM gradle:8.5-jdk17 AS build
+WORKDIR /app
+COPY build.gradle.kts settings.gradle.kts ./
+COPY src ./src
+RUN gradle installDist --no-daemon
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=build /app/build/install/my-app/ ./
+EXPOSE 2551
+ENTRYPOINT ["./bin/my-app"]
+```
+
+### k8s-cluster.yaml (Headless Service + StatefulSet)
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: akka-cluster
+spec:
+  clusterIP: None
+  selector:
+    app: akka-cluster
+  ports:
+    - name: remoting
+      port: 2551
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: akka-cluster
+spec:
+  serviceName: akka-cluster
+  replicas: 2
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: akka-cluster
+  template:
+    metadata:
+      labels:
+        app: akka-cluster
+    spec:
+      containers:
+        - name: akka-node
+          image: my-akka-app:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 2551
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CLUSTER_HOSTNAME
+              value: "$(POD_NAME).akka-cluster.default.svc.cluster.local"
+            - name: CLUSTER_PORT
+              value: "2551"
+            - name: CLUSTER_SEED_NODES
+              value: '["akka://ClusterSystem@akka-cluster-0.akka-cluster.default.svc.cluster.local:2551"]'
+            - name: CLUSTER_MIN_NR
+              value: "2"
+          readinessProbe:
+            tcpSocket:
+              port: 2551
+            initialDelaySeconds: 15
+            periodSeconds: 5
+```
+
+### Type A/B와의 비교
+
+| 항목 | Type A/B (Bootstrap) | Type C (seed-nodes) |
+|------|---------------------|---------------------|
+| 추가 의존성 | akka-management, bootstrap | 없음 |
+| 디스커버리 | 자동 (Config/K8s API) | 수동 (seed-nodes 환경변수) |
+| 노드 추가 | 자동 발견 | seed-nodes 재설정 필요 |
+| 적합 환경 | 프로덕션, 동적 스케일링 | 로컬 개발, 고정 노드 수 |
+| 복잡도 | 높음 (RBAC, Management HTTP) | 낮음 |
+
+---
+
 ## 핵심 주의사항
 
 | 항목 | 설명 |

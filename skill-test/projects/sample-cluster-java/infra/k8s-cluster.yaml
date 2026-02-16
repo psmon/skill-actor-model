@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: akka-cluster
+  labels:
+    app: akka-cluster
+spec:
+  clusterIP: None
+  selector:
+    app: akka-cluster
+  ports:
+    - name: remoting
+      port: 2551
+      targetPort: 2551
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: akka-cluster
+spec:
+  serviceName: akka-cluster
+  replicas: 2
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: akka-cluster
+  template:
+    metadata:
+      labels:
+        app: akka-cluster
+    spec:
+      containers:
+        - name: akka-node
+          image: sample-cluster-java:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 2551
+              name: remoting
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CLUSTER_HOSTNAME
+              value: "$(POD_NAME).akka-cluster.default.svc.cluster.local"
+            - name: CLUSTER_PORT
+              value: "2551"
+            - name: CLUSTER_SEED_NODES
+              value: '["akka://ClusterSystem@akka-cluster-0.akka-cluster.default.svc.cluster.local:2551"]'
+            - name: CLUSTER_MIN_NR
+              value: "2"
+          readinessProbe:
+            tcpSocket:
+              port: 2551
+            initialDelaySeconds: 15
+            periodSeconds: 5

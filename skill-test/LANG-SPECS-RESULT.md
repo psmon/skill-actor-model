@@ -444,3 +444,61 @@ var upCount = cluster.State.Members.Count(m => m.Status == MemberStatus.Up);
 ### 통합 결론
 - 세 구현 모두 "고정 시간 블로킹 대기"를 제거하고, "조건 기반 재시도/이벤트 수신"으로 통일 가능.
 - Kotlin/Java는 TestKit await API가 중심, .NET은 다중 시스템 테스트에서 관찰자 액터 패턴이 특히 유효했다.
+
+---
+
+## 9. K8s 인프라 구성 차이 (StatefulSet + seed-nodes 패턴)
+
+Docker Desktop Kubernetes에서 2노드 클러스터를 구동하기 위한 인프라 구성에서 발견한 3개 플랫폼 간 차이점.
+
+### Main 엔트리포인트 블로킹
+
+| 항목 | Kotlin Pekko Typed | Java Akka Classic | C# Akka.NET |
+|------|-------------------|-------------------|-------------|
+| 블로킹 API | `system.whenTerminated.toCompletableFuture().join()` | `system.getWhenTerminated().toCompletableFuture().join()` | `await system.WhenTerminated` |
+| ActorSystem 타입 | `ActorSystem<T>` (Typed) | `ActorSystem` (Classic) | `ActorSystem` |
+| Guardian 패턴 | `Behaviors.setup<Nothing>` → `Behaviors.empty()` | 없음 (top-level actorOf) | 없음 (top-level ActorOf) |
+| 리스너 보고 대상 | `system.ignoreRef()` (Typed: 무시) | `system.deadLetters()` (Classic: DeadLetter) | `system.DeadLetters` |
+
+### HOCON 환경변수 주입 패턴
+
+| 항목 | Kotlin Pekko | Java Akka | C# Akka.NET |
+|------|-------------|-----------|-------------|
+| 방식 | HOCON fallback (`${?ENV_VAR}`) | HOCON fallback (`${?ENV_VAR}`) | 코드 레벨 (`Environment.GetEnvironmentVariable`) |
+| 이유 | Typesafe Config 네이티브 지원 | Typesafe Config 네이티브 지원 | Akka.NET HOCON 파서의 환경변수 지원이 제한적 |
+| 설정 파일 | `application.conf` (리소스) | `application.conf` (리소스) | `Program.cs` (인라인 HOCON 문자열) |
+| seed-nodes 형식 | `["pekko://...@host:port"]` (JSON 배열) | `["akka://...@host:port"]` (JSON 배열) | `"akka.tcp://...@host:port"` (문자열) |
+
+### Docker 빌드
+
+| 항목 | Kotlin Pekko | Java Akka | C# Akka.NET |
+|------|-------------|-----------|-------------|
+| 빌드 스테이지 | `gradle:8.5-jdk17` | `gradle:8.5-jdk17` | `mcr.microsoft.com/dotnet/sdk:9.0` |
+| 런타임 스테이지 | `eclipse-temurin:17-jre` | `eclipse-temurin:17-jre` | `mcr.microsoft.com/dotnet/runtime:9.0` |
+| 빌드 명령 | `gradle installDist` | `gradle installDist` | `dotnet publish -c Release` |
+| 실행 바이너리 | `./bin/sample-cluster-kotlin` (쉘 스크립트) | `./bin/sample-cluster-java` (쉘 스크립트) | `dotnet ClusterActors.dll` |
+
+### K8s StatefulSet 설정
+
+| 항목 | Kotlin Pekko | Java Akka | C# Akka.NET |
+|------|-------------|-----------|-------------|
+| Service 이름 | `pekko-cluster` | `akka-cluster` | `akkanet-cluster` |
+| 리모팅 포트 | 25520 | 2551 | 4053 |
+| 프로토콜 | `pekko://ClusterSystem@...` | `akka://ClusterSystem@...` | `akka.tcp://ClusterSystem@...` |
+| 트랜스포트 | Artery (Aeron/TCP) | Artery (Aeron/TCP) | dot-netty.tcp |
+| Coordinated Shutdown | `exit-jvm = on` | `exit-jvm = on` | `exit-clr = on` |
+
+### 핵심 차이: HOCON 환경변수
+
+JVM 플랫폼(Java/Kotlin)은 Typesafe Config의 HOCON 파서가 `${?ENV_VAR}` fallback 구문을 네이티브 지원하므로, `application.conf` 파일 하나로 로컬 개발(기본값)과 K8s 배포(환경변수 주입)를 양립할 수 있다.
+
+반면 C# Akka.NET의 HOCON 파서는 환경변수 치환을 안정적으로 지원하지 않아, 코드 레벨에서 `Environment.GetEnvironmentVariable()`을 호출하고 HOCON 문자열을 동적으로 조합하는 방식을 사용해야 한다. 이는 설정 관리 복잡도를 높이지만, 코드에서 직접 제어하므로 디버깅이 더 명확하다는 장점도 있다.
+
+### C# 추가 변경: Library → Exe 전환
+
+Akka.NET 프로젝트를 K8s 컨테이너로 실행하려면 독립 실행 가능한 바이너리가 필요하다:
+
+- `<OutputType>Exe</OutputType>` 추가 → `dotnet run` 가능
+- `Akka.Remote` NuGet 패키지 추가 → `dot-netty.tcp` 트랜스포트 활성화
+- `Program.cs` 신규 생성 → 환경변수 기반 HOCON 구성 + `await system.WhenTerminated`
+- 기존 테스트 프로젝트(`ClusterActors.Tests`)의 `ProjectReference`는 Exe 참조 가능하므로 영향 없음

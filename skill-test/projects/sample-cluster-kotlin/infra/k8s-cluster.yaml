@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pekko-cluster
+  labels:
+    app: pekko-cluster
+spec:
+  clusterIP: None
+  selector:
+    app: pekko-cluster
+  ports:
+    - name: remoting
+      port: 25520
+      targetPort: 25520
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: pekko-cluster
+spec:
+  serviceName: pekko-cluster
+  replicas: 2
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: pekko-cluster
+  template:
+    metadata:
+      labels:
+        app: pekko-cluster
+    spec:
+      containers:
+        - name: pekko-node
+          image: sample-cluster-kotlin:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 25520
+              name: remoting
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CLUSTER_HOSTNAME
+              value: "$(POD_NAME).pekko-cluster.default.svc.cluster.local"
+            - name: CLUSTER_PORT
+              value: "25520"
+            - name: CLUSTER_SEED_NODES
+              value: '["pekko://ClusterSystem@pekko-cluster-0.pekko-cluster.default.svc.cluster.local:25520"]'
+            - name: CLUSTER_MIN_NR
+              value: "2"
+          readinessProbe:
+            tcpSocket:
+              port: 25520
+            initialDelaySeconds: 15
+            periodSeconds: 5

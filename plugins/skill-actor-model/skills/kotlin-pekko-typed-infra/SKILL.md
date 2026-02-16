@@ -383,6 +383,158 @@ spec:
 
 ---
 
+## Type C: StatefulSet + seed-nodes (로컬 K8s / 간이 배포)
+
+Management Bootstrap 없이 StatefulSet의 ordered startup과 seed-nodes 직접 지정으로 클러스터를 구성하는 방법입니다. Docker Desktop Kubernetes 등 로컬 환경에서 간단히 테스트할 때 적합합니다.
+
+### 특징
+
+- Management/Bootstrap 의존성 불필요 (기본 클러스터 의존성만 사용)
+- `podManagementPolicy: OrderedReady` → pod-0(Seed)이 먼저 기동
+- 코드 레벨 `ConfigFactory.parseString(overrides)` → 로컬 개발과 K8s 양립
+- `imagePullPolicy: Never` → 로컬 빌드 이미지 직접 사용
+- **K8s canonical hostname은 StatefulSet DNS 이름 사용** (Pod IP 사용 금지)
+
+> **HOCON `${?ENV_VAR}` 주의**: HOCON의 `${?ENV_VAR}` fallback은 문자열/숫자 타입에는 동작하지만, **리스트 타입(`seed-nodes`)에는 문자열로 파싱되어 타입 오류가 발생**합니다. 따라서 환경변수 기반 설정은 코드 레벨 `ConfigFactory.parseString()` 오버라이드 패턴을 사용합니다.
+
+> **canonical hostname과 seed-nodes 일치 필수**: K8s에서 `status.podIP`를 canonical hostname으로 사용하면 seed-nodes의 DNS 주소와 불일치하여 클러스터 조인이 실패합니다. 반드시 StatefulSet DNS 이름(`$(POD_NAME).{service}.default.svc.cluster.local`)을 사용해야 합니다.
+
+### HOCON 설정 (순수 기본값)
+
+```hocon
+pekko {
+  actor {
+    provider = "cluster"
+    allow-java-serialization = on
+  }
+  remote.artery {
+    canonical.hostname = "127.0.0.1"
+    canonical.port = 0
+  }
+  cluster {
+    seed-nodes = []
+    min-nr-of-members = 1
+    downing-provider-class = "org.apache.pekko.cluster.sbr.SplitBrainResolverProvider"
+  }
+  coordinated-shutdown.exit-jvm = on
+}
+```
+
+### Kotlin Main (코드 레벨 환경변수 오버라이드)
+
+```kotlin
+import com.typesafe.config.ConfigFactory
+import org.apache.pekko.actor.typed.ActorSystem
+import org.apache.pekko.actor.typed.javadsl.Behaviors
+
+fun main() {
+    val overrides = buildString {
+        System.getenv("CLUSTER_HOSTNAME")?.let { appendLine("pekko.remote.artery.canonical.hostname = \"$it\"") }
+        System.getenv("CLUSTER_PORT")?.let { appendLine("pekko.remote.artery.canonical.port = $it") }
+        System.getenv("CLUSTER_SEED_NODES")?.let { appendLine("pekko.cluster.seed-nodes = $it") }
+        System.getenv("CLUSTER_MIN_NR")?.let { appendLine("pekko.cluster.min-nr-of-members = $it") }
+    }
+
+    val config = ConfigFactory.parseString(overrides)
+        .withFallback(ConfigFactory.load())
+
+    val system = ActorSystem.create(
+        Behaviors.setup<Nothing> { ctx ->
+            ctx.spawn(MyClusterListenerActor.create(...), "clusterListener")
+            Behaviors.empty()
+        },
+        "ClusterSystem",
+        config
+    )
+    system.whenTerminated.toCompletableFuture().join()
+}
+```
+
+### Dockerfile (멀티스테이지)
+
+```dockerfile
+FROM gradle:8.5-jdk17 AS build
+WORKDIR /app
+COPY build.gradle.kts settings.gradle.kts ./
+COPY src ./src
+RUN gradle installDist --no-daemon
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=build /app/build/install/my-app/ ./
+EXPOSE 25520
+ENTRYPOINT ["./bin/my-app"]
+```
+
+### k8s-cluster.yaml (Headless Service + StatefulSet)
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: pekko-cluster
+spec:
+  clusterIP: None
+  selector:
+    app: pekko-cluster
+  ports:
+    - name: remoting
+      port: 25520
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: pekko-cluster
+spec:
+  serviceName: pekko-cluster
+  replicas: 2
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: pekko-cluster
+  template:
+    metadata:
+      labels:
+        app: pekko-cluster
+    spec:
+      containers:
+        - name: pekko-node
+          image: my-pekko-app:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 25520
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CLUSTER_HOSTNAME
+              value: "$(POD_NAME).pekko-cluster.default.svc.cluster.local"
+            - name: CLUSTER_PORT
+              value: "25520"
+            - name: CLUSTER_SEED_NODES
+              value: '["pekko://ClusterSystem@pekko-cluster-0.pekko-cluster.default.svc.cluster.local:25520"]'
+            - name: CLUSTER_MIN_NR
+              value: "2"
+          readinessProbe:
+            tcpSocket:
+              port: 25520
+            initialDelaySeconds: 15
+            periodSeconds: 5
+```
+
+### Type A/B와의 비교
+
+| 항목 | Type A/B (Bootstrap) | Type C (seed-nodes) |
+|------|---------------------|---------------------|
+| 추가 의존성 | pekko-management, bootstrap | 없음 |
+| 디스커버리 | 자동 (Config/K8s API) | 수동 (seed-nodes 환경변수) |
+| 노드 추가 | 자동 발견 | seed-nodes 재설정 필요 |
+| 적합 환경 | 프로덕션, 동적 스케일링 | 로컬 개발, 고정 노드 수 |
+| 복잡도 | 높음 (RBAC, Management HTTP) | 낮음 |
+
+---
+
 ## 핵심 주의사항
 
 | 항목 | 설명 |
