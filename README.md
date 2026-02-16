@@ -24,6 +24,36 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 | AI Agent Pipeline (Java) | `/actor-ai-agent-java` | Java + Akka Classic + LLM |
 | AI Agent Pipeline (Kotlin) | `/actor-ai-agent-kotlin` | Kotlin + Pekko Typed + LLM |
 
+
+### 버전채택 
+- Akka 2.7을 채택한 이유는 Akka의 본방이 BSD로전환후 2.6부터 오픈소스로 점진전환 , 구현시점 2.7의 전환시점이 곧 다가와 채택 
+- Pekko 의 경우 2.6x 기반 1.1.0에서 어느정도 안정 버전을 갖추어 채택 - 
+- 오픈소스는 버전체크 부지런해야 활용가능한것같으며 스킬에 이용되는 기반버전도 함께 올릴예정
+
+|Akka| Pekko  | Akka.NET |
+|---|--------|---|
+|2.6.x| 1.0.x~ |1.4.x~ |
+|2.7.x| 1.3.x~ |1.5.x~ |
+
+#### TypedActor의 특징
+- Typed Actor는 2.6에 출시, Pekko-Kotlin 버전으로 다루는중 - 이벤트 발신/수신자 약손된 Type이 안맞는경우 컴파일타임에 오류를냄, 구현과정에서 이것을 준수하느라 약간의 스트레스
+- Classic Actor 이용시에는 이벤트 전송 Type이 자유로운 장점이 있지만 단점이 될수 있기때문에 설계시 메시지 프로토콜을 더 명확히 정의하는것이 중요
+
+링크 : https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.3.html
+
+#### 액터프레임워크 정보
+
+아파치 Flink에서(Spark보다 조금더 대세 스트리밍 툴) Akka를 Pekko로전환, AWS에도 주력으로 밀고있는 클라우드 제품이여서 오픈소스인 Pekko채택및 전환
+- https://docs.aws.amazon.com/ko_kr/managed-flink/latest/java/flink-1-18.html : AWS의 Pekko 전환 주요뉴스
+- https://issues.apache.org/jira/browse/FLINK-32468 : 아파치 Fling에서 Akka에서 Pekko로 전환
+- https://akka.io/technical-support-for-apache-pekko  : Akka본방에서 Pekko지원을 약속
+
+닷넷진영은 Akka의 본방을 계승 포팅을해 오픈소스로 성공적 활동중
+- https://petabridge.com/bootcamp/ : akka.net 을 딜리버리및 지원하는 Petabridge의 공식홈
+- https://petabridge.com/blog/  : 개인적으로 이벤트드리븐,분산처리 닷넷관련 고급 기술테크들을 빠르게 다루는듯 -MsLearn보다 여기서 닷넷구현 패턴들을 주로 학습 
+- https://learn.microsoft.com/en-us/dotnet/orleans/overview?pivots=orleans-10-0 - MS에도 액터시스템 본방이 있지만, MS플랫폼내에서만 주로사용되는듯(게임포함 Azure 클라우드 엣지전반적으로 액터시스템사용)
+
+
 ## 설치 방법
 
 ### 방법 1: 플러그인 마켓플레이스로 설치 (권장)
