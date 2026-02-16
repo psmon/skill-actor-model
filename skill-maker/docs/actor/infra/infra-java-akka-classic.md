@@ -1,0 +1,424 @@
+# Java + Akka Classic 분산 클러스터 인프라 가이드
+
+Akka Classic 2.7.x 기반 액터 시스템의 분산 클러스터링 시 **서비스 디스커버리(Service Discovery)** 설정 가이드입니다.
+
+## 호환 버전
+
+| 컴포넌트 | 버전 | 비고 |
+|---------|------|------|
+| Akka Classic | 2.7.0 ~ 2.7.1 | 기본 스킬 기준 2.7.1 |
+| Akka Management | 1.2.0 | Akka 2.7.0과 공식 페어링 (Akka 22.10 릴리스) |
+| Akka Discovery Kubernetes API | 1.2.0 | Management와 동일 버전 |
+| Akka HTTP | 10.4.0 | Management HTTP에 필요 |
+| Scala Binary | 2.13 | `_2.13` suffix |
+| JDK | 11+ | |
+
+> **라이선스**: Akka 2.7.x는 BSL(Business Source License)입니다. 오픈소스 대안이 필요하면 Apache Pekko(Apache 2.0)를 고려하세요.
+
+## HOCON 네임스페이스
+
+Akka Classic은 `akka { }` 블록을 사용합니다.
+
+```
+akka.discovery { }
+akka.management { }
+akka.remote.artery { }
+akka.cluster { }
+```
+
+프로토콜: `akka://`
+
+---
+
+## 디스커버리 방법 개요
+
+| 방법 | 설정 키 | 아티팩트 | 권장 환경 |
+|------|---------|---------|----------|
+| **Config** | `config` | `akka-discovery` (core) | Docker Compose, 로컬 개발 |
+| **DNS** | `akka-dns` | `akka-discovery` (core) | Kubernetes Headless Service |
+| **Kubernetes API** | `kubernetes-api` | `akka-discovery-kubernetes-api` | Kubernetes (권장) |
+| **Aggregate** | `aggregate` | `akka-discovery` (core) | 다중 방법 조합 |
+
+> Config와 DNS는 `akka-discovery`에 내장. Kubernetes API는 별도 아티팩트 추가 필요.
+
+---
+
+## Type A: Docker Compose 기반 디스커버리
+
+Kubernetes 종속 없이 Docker Compose 환경에서 클러스터를 구성하는 방법입니다.
+
+### Gradle 의존성 (Kotlin DSL)
+
+```kotlin
+val AkkaVersion = "2.7.1"
+val AkkaHttpVersion = "10.4.0"
+val AkkaManagementVersion = "1.2.0"
+val scalaBinaryVersion = "2.13"
+
+dependencies {
+    // Core
+    implementation("com.typesafe.akka:akka-actor_$scalaBinaryVersion:$AkkaVersion")
+    implementation("com.typesafe.akka:akka-cluster_$scalaBinaryVersion:$AkkaVersion")
+    implementation("com.typesafe.akka:akka-cluster-tools_$scalaBinaryVersion:$AkkaVersion")
+    implementation("com.typesafe.akka:akka-cluster-sharding_$scalaBinaryVersion:$AkkaVersion")
+    implementation("com.typesafe.akka:akka-discovery_$scalaBinaryVersion:$AkkaVersion")
+    implementation("com.typesafe.akka:akka-stream_$scalaBinaryVersion:$AkkaVersion")
+
+    // Management + Bootstrap
+    implementation("com.lightbend.akka.management:akka-management_$scalaBinaryVersion:$AkkaManagementVersion")
+    implementation("com.lightbend.akka.management:akka-management-cluster-bootstrap_$scalaBinaryVersion:$AkkaManagementVersion")
+
+    // Test
+    testImplementation("com.typesafe.akka:akka-testkit_$scalaBinaryVersion:$AkkaVersion")
+}
+```
+
+### HOCON 설정 (Config Discovery)
+
+```hocon
+akka {
+  actor {
+    provider = cluster
+
+    serializers {
+      jackson-json = "akka.serialization.jackson.JacksonJsonSerializer"
+    }
+    serialization-bindings {
+      "com.example.CborSerializable" = jackson-json
+    }
+  }
+
+  remote.artery {
+    canonical {
+      hostname = ${HOSTNAME}  # Docker 환경변수로 주입
+      port = 2551
+    }
+  }
+
+  cluster {
+    # seed-nodes를 설정하지 않음 (Bootstrap과 혼용 금지)
+    shutdown-after-unsuccessful-join-seed-nodes = 30s
+
+    downing-provider-class = "akka.cluster.sbr.SplitBrainResolverProvider"
+    split-brain-resolver {
+      active-strategy = keep-majority
+      stable-after = 20s
+    }
+  }
+
+  discovery {
+    method = config
+
+    config.services = {
+      my-cluster = {
+        endpoints = [
+          { host = "node1", port = 8558 },
+          { host = "node2", port = 8558 },
+          { host = "node3", port = 8558 }
+        ]
+      }
+    }
+  }
+
+  management {
+    http {
+      hostname = "0.0.0.0"
+      port = 8558
+    }
+
+    cluster.bootstrap {
+      contact-point-discovery {
+        service-name = "my-cluster"
+        discovery-method = config
+        required-contact-point-nr = 2
+      }
+    }
+  }
+
+  coordinated-shutdown.exit-jvm = on
+}
+```
+
+### Java 초기화 코드
+
+```java
+import akka.actor.ActorSystem;
+import akka.management.javadsl.AkkaManagement;
+import akka.management.cluster.bootstrap.ClusterBootstrap;
+import com.typesafe.config.ConfigFactory;
+
+public class Main {
+    public static void main(String[] args) {
+        ActorSystem system = ActorSystem.create("ClusterSystem",
+            ConfigFactory.load());
+
+        // Management HTTP + Cluster Bootstrap 시작
+        AkkaManagement.get(system).start();
+        ClusterBootstrap.get(system).start();
+
+        // 액터 생성 등 비즈니스 로직
+        system.actorOf(ClusterListenerActor.props(), "clusterListener");
+    }
+}
+```
+
+### docker-compose.yml
+
+```yaml
+version: "3.8"
+services:
+  node1:
+    image: my-akka-app:latest
+    hostname: node1
+    environment:
+      - HOSTNAME=node1
+    ports:
+      - "2551:2551"
+      - "8558:8558"
+    networks:
+      - cluster-net
+
+  node2:
+    image: my-akka-app:latest
+    hostname: node2
+    environment:
+      - HOSTNAME=node2
+    ports:
+      - "2552:2551"
+      - "8559:8558"
+    networks:
+      - cluster-net
+
+  node3:
+    image: my-akka-app:latest
+    hostname: node3
+    environment:
+      - HOSTNAME=node3
+    ports:
+      - "2553:2551"
+      - "8560:8558"
+    networks:
+      - cluster-net
+
+networks:
+  cluster-net:
+    driver: bridge
+```
+
+### 클러스터 형성 과정
+
+1. 각 노드가 Management HTTP(8558)를 노출
+2. Bootstrap이 Config Discovery에서 엔드포인트 목록 조회
+3. `required-contact-point-nr`(2개) 이상 발견될 때까지 반복
+4. 발견된 노드의 `/bootstrap/seed-nodes` 프로브
+5. 기존 클러스터가 없으면 **가장 낮은 주소의 노드**가 self-join
+6. 나머지 노드가 해당 클러스터에 합류
+
+---
+
+## Type B: Kubernetes 기반 디스커버리
+
+Kubernetes API를 통해 Pod를 자동 발견하여 클러스터를 형성합니다.
+
+### Gradle 의존성 (추가분)
+
+```kotlin
+// Type A 의존성 + Kubernetes Discovery
+implementation("com.lightbend.akka.discovery:akka-discovery-kubernetes-api_$scalaBinaryVersion:$AkkaManagementVersion")
+```
+
+### HOCON 설정 (Kubernetes API Discovery)
+
+```hocon
+akka {
+  actor {
+    provider = cluster
+
+    serializers {
+      jackson-json = "akka.serialization.jackson.JacksonJsonSerializer"
+    }
+    serialization-bindings {
+      "com.example.CborSerializable" = jackson-json
+    }
+  }
+
+  remote.artery {
+    canonical {
+      hostname = ${?HOSTNAME}
+      port = 2551
+    }
+  }
+
+  cluster {
+    shutdown-after-unsuccessful-join-seed-nodes = 30s
+
+    downing-provider-class = "akka.cluster.sbr.SplitBrainResolverProvider"
+    split-brain-resolver {
+      active-strategy = keep-majority
+      stable-after = 20s
+    }
+  }
+
+  discovery {
+    method = kubernetes-api
+
+    kubernetes-api {
+      pod-namespace-path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+      pod-label-selector = "app=%s"
+    }
+  }
+
+  management {
+    http {
+      hostname = ${?HOSTNAME}
+      port = 8558
+      bind-hostname = "0.0.0.0"
+      bind-port = 8558
+    }
+
+    cluster.bootstrap {
+      contact-point-discovery {
+        service-name = "my-akka-app"
+        discovery-method = kubernetes-api
+        required-contact-point-nr = 2
+      }
+    }
+  }
+
+  coordinated-shutdown.exit-jvm = on
+}
+```
+
+### Kubernetes RBAC
+
+```yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: pod-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "watch", "list"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: read-pods
+subjects:
+  - kind: ServiceAccount
+    name: default
+roleRef:
+  kind: Role
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io
+```
+
+### Kubernetes Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-akka-app
+  labels:
+    app: my-akka-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-akka-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: my-akka-app
+    spec:
+      containers:
+        - name: app
+          image: my-akka-app:latest
+          ports:
+            - name: remoting
+              containerPort: 2551
+              protocol: TCP
+            - name: management
+              containerPort: 8558
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: management
+          livenessProbe:
+            httpGet:
+              path: /alive
+              port: management
+```
+
+### Headless Service (내부 디스커버리용)
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-akka-app-internal
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: my-akka-app
+  ports:
+    - name: management
+      port: 8558
+      protocol: TCP
+    - name: remoting
+      port: 2551
+      protocol: TCP
+```
+
+### External Service (외부 트래픽용)
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-akka-app
+spec:
+  type: LoadBalancer
+  selector:
+    app: my-akka-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+```
+
+---
+
+## 핵심 주의사항
+
+| 항목 | 설명 |
+|------|------|
+| seed-nodes 혼용 금지 | Bootstrap 사용 시 `akka.cluster.seed-nodes`를 설정하면 안 됨 |
+| required-contact-point-nr | 1로 설정하면 단일 노드가 독립 클러스터를 형성하여 split-brain 위험. 최소 2 이상 |
+| HOCON 네임스페이스 | `akka { }` 사용 |
+| 프로토콜 | `akka://ClusterSystem@host:port` |
+| Management 포트 일관성 | 모든 노드가 동일한 Management HTTP 포트(8558) 사용 |
+| SBR 필수 | 프로덕션에서 `SplitBrainResolverProvider` 반드시 설정 |
+| coordinated-shutdown | `exit-jvm = on`으로 JVM 안전 종료 보장 |
+| Docker Compose DNS 제약 | SRV 레코드 미지원. `contact-point.fallback-port` 설정 필요하거나 Config Discovery 권장 |
+| Kubernetes publishNotReadyAddresses | `true`로 설정하여 readiness 교착상태 방지 |
+| BSL 라이선스 | Akka 2.7.x는 BSL. 상용 환경에서 라이선스 조건 확인 필요 |
+| 아티팩트 GroupId | Management는 `com.lightbend.akka.management`, Discovery는 `com.lightbend.akka.discovery`, Core는 `com.typesafe.akka` |
+
+## 참고 문서
+
+- [Akka Management Bootstrap](https://doc.akka.io/libraries/akka-management/current/bootstrap/)
+- [Akka Kubernetes API Discovery](https://doc.akka.io/libraries/akka-management/current/bootstrap/kubernetes-api.html)
+- [Akka Discovery Methods](https://doc.akka.io/libraries/akka-management/current/discovery/index.html)
