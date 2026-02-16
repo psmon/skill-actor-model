@@ -16,6 +16,8 @@ dependencies {
     implementation("com.typesafe.akka:akka-actor_2.13:$akkaVersion")
     implementation("com.typesafe.akka:akka-cluster_2.13:$akkaVersion")
     implementation("com.typesafe.akka:akka-cluster-tools_2.13:$akkaVersion")
+    implementation("com.typesafe.akka:akka-stream_2.13:$akkaVersion")
+    implementation("com.typesafe.akka:akka-stream-kafka_2.13:4.0.2")
     implementation("com.typesafe.akka:akka-slf4j_2.13:$akkaVersion")
     implementation("ch.qos.logback:logback-classic:1.4.14")
 

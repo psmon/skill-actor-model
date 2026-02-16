@@ -49,6 +49,14 @@ spec:
               value: '"akka.tcp://ClusterSystem@akkanet-cluster-0.akkanet-cluster.default.svc.cluster.local:4053"'
             - name: CLUSTER_MIN_NR
               value: "2"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka.default.svc.cluster.local:9092"
+            - name: KAFKA_TOPIC
+              value: "cluster-dotnet-events"
+            - name: KAFKA_GROUP_ID_PREFIX
+              value: "cluster-dotnet-group"
+            - name: KAFKA_START_DELAY_SECONDS
+              value: "20"
           readinessProbe:
             tcpSocket:
               port: 4053

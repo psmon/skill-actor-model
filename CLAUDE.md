@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Code 스킬 플러그인 저장소. 액터 모델(Actor Model) 코드를 Java / Kotlin / C# 세 플랫폼에서 생성하는 6종의 스킬을 제공한다. 버전: 1.1.0, 라이선스: MIT.
+Claude Code 스킬 플러그인 저장소. 액터 모델(Actor Model) 코드를 Java / Kotlin / C# 세 플랫폼에서 생성하는 15종의 스킬을 제공한다. 버전: 1.14.0, 라이선스: MIT.
 
 ## Skills (슬래시 명령어)
 
@@ -13,6 +13,15 @@ Claude Code 스킬 플러그인 저장소. 액터 모델(Actor Model) 코드를 
 | `/java-akka-classic` | Java + Akka Classic 2.7.x | `AbstractActor` |
 | `/kotlin-pekko-typed` | Kotlin + Pekko Typed 1.1.x | `AbstractBehavior<T>` |
 | `/dotnet-akka-net` | C# + Akka.NET 1.5.x | `ReceiveActor` |
+| `/java-akka-classic-test` | Java + Akka Classic TestKit | `TestKit` |
+| `/kotlin-pekko-typed-test` | Kotlin + Pekko Typed ActorTestKit | `ActorTestKit` |
+| `/dotnet-akka-net-test` | C# + Akka.TestKit.Xunit2 | `TestKit` |
+| `/java-akka-classic-cluster` | Java + Akka Classic Cluster 2.7.x | `AbstractActor` + Cluster |
+| `/kotlin-pekko-typed-cluster` | Kotlin + Pekko Typed Cluster 1.1.x | `AbstractBehavior<T>` + Cluster |
+| `/dotnet-akka-net-cluster` | C# + Akka.NET Cluster 1.5.x | `ReceiveActor` + Cluster |
+| `/java-akka-classic-infra` | Java + Akka Classic + Docker/K8s | Infra/Discovery |
+| `/kotlin-pekko-typed-infra` | Kotlin + Pekko Typed + Docker/K8s | Infra/Discovery |
+| `/dotnet-akka-net-infra` | C# + Akka.NET + Docker/K8s | Infra/Discovery |
 | `/actor-ai-agent` | C# + Akka.NET + LLM | `ReceiveActor` + AI Pipeline |
 | `/actor-ai-agent-java` | Java + Akka Classic + LLM | `AbstractActor` + AI Pipeline |
 | `/actor-ai-agent-kotlin` | Kotlin + Pekko Typed + LLM | `AbstractBehavior<T>` + AI Pipeline |
@@ -35,7 +44,7 @@ Claude Code 스킬 플러그인 저장소. 액터 모델(Actor Model) 코드를 
 ```
 plugins/skill-actor-model/
 ├── .claude-plugin/plugin.json        # 플러그인 매니페스트 (name, version)
-└── skills/{skill-name}/SKILL.md      # 스킬 정의 (6종)
+└── skills/{skill-name}/SKILL.md      # 스킬 정의 (15종)
 
 .claude-plugin/marketplace.json       # 마켓플레이스 카탈로그 (루트)
 

@@ -49,6 +49,14 @@ spec:
               value: '["pekko://ClusterSystem@pekko-cluster-0.pekko-cluster.default.svc.cluster.local:25520"]'
             - name: CLUSTER_MIN_NR
               value: "2"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka.default.svc.cluster.local:9092"
+            - name: KAFKA_TOPIC
+              value: "cluster-kotlin-events"
+            - name: KAFKA_GROUP_ID_PREFIX
+              value: "cluster-kotlin-group"
+            - name: KAFKA_START_DELAY_SECONDS
+              value: "20"
           readinessProbe:
             tcpSocket:
               port: 25520

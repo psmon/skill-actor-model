@@ -9,6 +9,7 @@ src/main/java/cluster/java/
 ├── Main.java                  # 엔트리포인트 (ActorSystem + getWhenTerminated 블로킹)
 ├── ClusterListenerActor.java  # 클러스터 이벤트 리스너 (MemberUp/Unreachable/Removed)
 ├── CounterSingletonActor.java # Singleton 카운터 액터
+├── KafkaStreamSingletonActor.java # Alpakka Kafka Streams 1회 실행 싱글톤
 ├── PubSubPublisherActor.java  # DistributedPubSub 발행자
 └── PubSubSubscriberActor.java # DistributedPubSub 구독자
 
@@ -17,7 +18,8 @@ src/main/resources/
 
 src/test/java/cluster/java/
 ├── ClusterActorTest.java      # 1-Node 클러스터 테스트 (3 tests)
-└── TwoNodeClusterTest.java    # 2-Node 클러스터 테스트 (4 tests)
+├── TwoNodeClusterTest.java    # 2-Node 클러스터 테스트 (4 tests)
+└── KafkaStreamSingletonActorTest.java # Kafka 싱글톤 1회 실행 보장 테스트
 
 infra/
 ├── Dockerfile                 # 멀티스테이지 빌드 (gradle → temurin JRE)
@@ -46,6 +48,10 @@ docker build -f infra/Dockerfile -t sample-cluster-java:latest .
 ## Kubernetes 배포 (Docker Desktop)
 
 ```bash
+# Kafka standalone 1개 먼저 구동
+kubectl apply -f ../../infra/k8s-kafka-standalone.yaml
+kubectl rollout status statefulset/kafka
+
 # 배포
 kubectl apply -f infra/k8s-cluster.yaml
 
@@ -55,9 +61,13 @@ kubectl get pods -w
 # 로그 확인 ("Member is Up" 로그가 각 노드에서 2개)
 kubectl logs akka-cluster-0
 kubectl logs akka-cluster-1
+# Kafka 1회 실행 확인
+kubectl logs akka-cluster-0 | grep "Kafka stream round-trip"
+kubectl logs akka-cluster-1 | grep "Kafka stream round-trip"
 
 # 정리 (coordinated-shutdown으로 graceful leave)
 kubectl delete -f infra/k8s-cluster.yaml
+kubectl delete -f ../../infra/k8s-kafka-standalone.yaml
 ```
 
 ## 환경변수
@@ -68,6 +78,10 @@ kubectl delete -f infra/k8s-cluster.yaml
 | `CLUSTER_PORT` | `0` (자동) | 리모팅 포트 |
 | `CLUSTER_SEED_NODES` | `[]` (빈 목록) | seed-nodes 목록 (HOCON 배열 형식) |
 | `CLUSTER_MIN_NR` | `1` | 클러스터 최소 멤버 수 |
+| `KAFKA_BOOTSTRAP_SERVERS` | `kafka.default.svc.cluster.local:9092` | Kafka bootstrap 서버 |
+| `KAFKA_TOPIC` | `cluster-java-events` | Java 프로젝트 전용 토픽 |
+| `KAFKA_GROUP_ID_PREFIX` | `cluster-java-group` | Consumer group prefix |
+| `KAFKA_START_DELAY_SECONDS` | `15` | 클러스터 안정화 후 Kafka 실행 지연 |
 
 ## K8s 아키텍처
 

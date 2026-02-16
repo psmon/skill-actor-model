@@ -33,13 +33,22 @@ Claude Code 스킬 플러그인으로, 액터 모델(Actor Model)을 Java / Kotl
 ```
 
 
-## 스킬 6종
+## 스킬 15종
 
 | 스킬 | 명령어 | 플랫폼 | 액터 베이스 |
 |------|--------|--------|------------|
 | Java Akka Classic | `/java-akka-classic` | Java + Akka 2.7.x | `AbstractActor` |
 | Kotlin Pekko Typed | `/kotlin-pekko-typed` | Kotlin + Pekko 1.1.x | `AbstractBehavior<T>` |
 | C# Akka.NET | `/dotnet-akka-net` | C# + Akka.NET 1.5.x | `ReceiveActor` |
+| Java Akka Classic Test | `/java-akka-classic-test` | Java + Akka Classic TestKit | `TestKit` |
+| Kotlin Pekko Typed Test | `/kotlin-pekko-typed-test` | Kotlin + Pekko Typed ActorTestKit | `ActorTestKit` |
+| C# Akka.NET Test | `/dotnet-akka-net-test` | C# + Akka.TestKit.Xunit2 | `TestKit` |
+| Java Akka Classic Cluster | `/java-akka-classic-cluster` | Java + Akka Classic Cluster 2.7.x | `AbstractActor` + Cluster |
+| Kotlin Pekko Typed Cluster | `/kotlin-pekko-typed-cluster` | Kotlin + Pekko Typed Cluster 1.1.x | `AbstractBehavior<T>` + Cluster |
+| C# Akka.NET Cluster | `/dotnet-akka-net-cluster` | C# + Akka.NET Cluster 1.5.x | `ReceiveActor` + Cluster |
+| Java Akka Classic Infra | `/java-akka-classic-infra` | Java + Akka Classic + Docker/K8s | Infra/Discovery |
+| Kotlin Pekko Typed Infra | `/kotlin-pekko-typed-infra` | Kotlin + Pekko Typed + Docker/K8s | Infra/Discovery |
+| C# Akka.NET Infra | `/dotnet-akka-net-infra` | C# + Akka.NET + Docker/K8s | Infra/Discovery |
 | AI Agent Pipeline (.NET) | `/actor-ai-agent` | C# + Akka.NET + LLM | `ReceiveActor` + AI |
 | AI Agent Pipeline (Java) | `/actor-ai-agent-java` | Java + Akka Classic + LLM | `AbstractActor` + AI |
 | AI Agent Pipeline (Kotlin) | `/actor-ai-agent-kotlin` | Kotlin + Pekko Typed + LLM | `AbstractBehavior<T>` + AI |
@@ -53,7 +62,7 @@ skill-actor-model/
 ├── .claude-plugin/marketplace.json    # 마켓플레이스 카탈로그
 ├── plugins/skill-actor-model/         # 플러그인 배포본
 │   ├── .claude-plugin/plugin.json
-│   └── skills/                        # SKILL.md 6종 (실제 스킬 정의)
+│   └── skills/                        # SKILL.md 15종 (실제 스킬 정의)
 ├── skill-maker/docs/actor/            # 스킬 생성 참조 문서 (패턴 가이드)
 │   ├── 00-actor-model-overview.md
 │   ├── 01-java-akka-classic/

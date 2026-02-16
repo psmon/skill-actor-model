@@ -10,6 +10,8 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import java.time.Duration
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicInteger
 
 class ClusterActorTest {
     companion object {
@@ -87,6 +89,41 @@ class ClusterActorTest {
             pubSubManager.tell(PublishMessage("test-topic", "hello-cluster"))
             subscriberProbe.expectMessage(Duration.ofMillis(700), "hello-cluster")
             "delivered"
+        }
+    }
+
+    @Test
+    fun `kafka singleton should execute runner only once`() {
+        val calls = AtomicInteger(0)
+        val fakeRunner = object : KafkaStreamRunner {
+            override fun runOnce(
+                bootstrapServers: String,
+                topic: String,
+                groupIdPrefix: String,
+                payload: String,
+                timeout: Duration
+            ) = CompletableFuture.completedFuture(payload).also { calls.incrementAndGet() }
+        }
+
+        val singleton = testKit.spawn(
+            KafkaStreamSingletonActor.create(
+                "localhost:9092",
+                "cluster-kotlin-events",
+                "test-group",
+                Duration.ofSeconds(3),
+                fakeRunner
+            ),
+            "kafka-singleton-test"
+        )
+
+        singleton.tell(StartKafkaStream)
+        singleton.tell(StartKafkaStream)
+        singleton.tell(StartKafkaStream)
+
+        val observer = testKit.createTestProbe<String>()
+        observer.awaitAssert(Duration.ofSeconds(3), Duration.ofMillis(100)) {
+            kotlin.test.assertEquals(1, calls.get())
+            "done"
         }
     }
 }

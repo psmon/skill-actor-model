@@ -9,6 +9,7 @@ src/main/kotlin/cluster/kotlin/
 ├── Main.kt                    # 엔트리포인트 (ActorSystem + whenTerminated 블로킹)
 ├── ClusterListenerActor.kt    # 클러스터 MemberUp 이벤트 리스너
 ├── CounterSingletonActor.kt   # Singleton 카운터 액터
+├── KafkaStreamSingletonActor.kt # Pekko Kafka Streams 1회 실행 싱글톤
 └── PubSubManagerActor.kt      # Topic 기반 PubSub 매니저
 
 src/main/resources/
@@ -45,6 +46,10 @@ docker build -f infra/Dockerfile -t sample-cluster-kotlin:latest .
 ## Kubernetes 배포 (Docker Desktop)
 
 ```bash
+# Kafka standalone 1개 먼저 구동
+kubectl apply -f ../../infra/k8s-kafka-standalone.yaml
+kubectl rollout status statefulset/kafka
+
 # 배포
 kubectl apply -f infra/k8s-cluster.yaml
 
@@ -54,9 +59,13 @@ kubectl get pods -w
 # 로그 확인 ("Member is Up" 로그가 각 노드에서 2개)
 kubectl logs pekko-cluster-0
 kubectl logs pekko-cluster-1
+# Kafka 1회 실행 확인
+kubectl logs pekko-cluster-0 | grep "Kafka stream round-trip"
+kubectl logs pekko-cluster-1 | grep "Kafka stream round-trip"
 
 # 정리 (coordinated-shutdown으로 graceful leave)
 kubectl delete -f infra/k8s-cluster.yaml
+kubectl delete -f ../../infra/k8s-kafka-standalone.yaml
 ```
 
 ## 환경변수
@@ -67,6 +76,10 @@ kubectl delete -f infra/k8s-cluster.yaml
 | `CLUSTER_PORT` | `0` (자동) | 리모팅 포트 |
 | `CLUSTER_SEED_NODES` | `[]` (빈 목록) | seed-nodes 목록 (HOCON 배열 형식) |
 | `CLUSTER_MIN_NR` | `1` | 클러스터 최소 멤버 수 |
+| `KAFKA_BOOTSTRAP_SERVERS` | `kafka.default.svc.cluster.local:9092` | Kafka bootstrap 서버 |
+| `KAFKA_TOPIC` | `cluster-kotlin-events` | Kotlin 프로젝트 전용 토픽 |
+| `KAFKA_GROUP_ID_PREFIX` | `cluster-kotlin-group` | Consumer group prefix |
+| `KAFKA_START_DELAY_SECONDS` | `15` | 클러스터 안정화 후 Kafka 실행 지연 |
 
 ## K8s 아키텍처
 
