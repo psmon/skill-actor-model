@@ -7,8 +7,9 @@ import org.apache.pekko.actor.typed.javadsl.ActorContext
 import org.apache.pekko.actor.typed.javadsl.Behaviors
 import org.apache.pekko.actor.typed.javadsl.Receive
 import org.apache.pekko.actor.typed.pubsub.Topic
+import java.io.Serializable
 
-sealed class PubSubCommand
+sealed class PubSubCommand : Serializable
 data class PublishMessage(val topicName: String, val message: String) : PubSubCommand()
 data class SubscribeToTopic(val topicName: String, val subscriber: ActorRef<String>) : PubSubCommand()
 

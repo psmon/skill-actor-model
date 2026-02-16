@@ -6,8 +6,9 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior
 import org.apache.pekko.actor.typed.javadsl.ActorContext
 import org.apache.pekko.actor.typed.javadsl.Behaviors
 import org.apache.pekko.actor.typed.javadsl.Receive
+import java.io.Serializable
 
-sealed class CounterCommand
+sealed class CounterCommand : Serializable
 object Increment : CounterCommand()
 data class GetCount(val replyTo: ActorRef<CounterCommand>) : CounterCommand()
 data class CountValue(val value: Int) : CounterCommand()

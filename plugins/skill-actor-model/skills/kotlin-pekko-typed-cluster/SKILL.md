@@ -561,6 +561,186 @@ val cluster = Cluster.get(system)
 cluster.manager().tell(org.apache.pekko.cluster.typed.Join.create(cluster.selfMember().address()))
 ```
 
+### 8. 크로스노드 통신 & 멀티노드 테스트
+
+단일 노드 API 사용법은 1~7번 섹션으로 충분하지만, 실제 멀티노드 클러스터 운용 시에는 크로스노드 통신에 필요한 추가 패턴이 있습니다.
+
+#### 8-1. 크로스노드 액터 참조 (Receptionist)
+
+Pekko Typed에서는 `ServiceKey` + `Receptionist`를 통해 타입 안전하게 크로스노드 액터를 발견합니다.
+
+```kotlin
+// 1. Seed 노드: 액터 생성 후 Receptionist에 등록
+val serviceKey = ServiceKey.create(MyCommand::class.java, "my-service")
+val actor = context.spawn(MyActor.create(), "my-actor")
+context.system.receptionist().tell(Receptionist.register(serviceKey, actor))
+
+// 2. Joining 노드: Receptionist 구독으로 크로스노드 액터 발견
+val listingProbe = joiningTestKit.createTestProbe<Receptionist.Listing>()
+joiningTestKit.system().receptionist().tell(
+    Receptionist.subscribe(serviceKey, listingProbe.ref()))
+
+val listing = listingProbe.expectMessageClass(Receptionist.Listing::class.java)
+val remoteActor = listing.getServiceInstances(serviceKey).first()
+remoteActor.tell(MyCommand(...))
+```
+
+| 방법 | 코드 | 설명 |
+|------|------|------|
+| `ServiceKey` | `ServiceKey.create(Class, name)` | 타입 안전한 서비스 키 정의 |
+| 등록 | `receptionist().tell(Receptionist.register(key, ref))` | 클러스터 전체에 액터 등록 |
+| 구독 | `receptionist().tell(Receptionist.subscribe(key, adapter))` | 서비스 인스턴스 목록 수신 |
+
+> **Classic과의 차이**: Akka Classic의 `ActorSelection`(경로 기반) 대신, Typed에서는 `Receptionist`(타입 기반)를 사용합니다.
+
+#### 8-2. 크로스노드 메시지 직렬화
+
+크로스노드 통신 시 모든 메시지는 네트워크를 통해 전송되므로 **직렬화 가능**해야 합니다.
+
+```kotlin
+// sealed class 메시지에 Serializable 구현 필수
+sealed class CounterCommand : java.io.Serializable
+object Increment : CounterCommand()
+data class GetCount(val replyTo: ActorRef<CounterCommand>) : CounterCommand()
+data class CountValue(val value: Int) : CounterCommand()
+```
+
+```hocon
+pekko.actor {
+  allow-java-serialization = on
+  warn-about-java-serializer-usage = off
+}
+```
+
+> **주의**: Java 직렬화는 개발/테스트용입니다. 프로덕션에서는 Jackson JSON 또는 Protobuf를 권장합니다.
+
+#### 8-3. 멀티노드 HOCON 설정 템플릿
+
+**Seed 노드** (고정 포트):
+
+```hocon
+pekko {
+  actor {
+    provider = "cluster"
+    allow-java-serialization = on
+    warn-about-java-serializer-usage = off
+  }
+  remote.artery {
+    canonical.hostname = "127.0.0.1"
+    canonical.port = 25521
+  }
+  cluster {
+    seed-nodes = ["pekko://ClusterSystem@127.0.0.1:25521"]
+    min-nr-of-members = 2
+    downing-provider-class = "org.apache.pekko.cluster.sbr.SplitBrainResolverProvider"
+    jmx.multi-mbeans-in-same-jvm = on
+  }
+}
+```
+
+**Joining 노드** (자동 포트):
+
+```hocon
+pekko {
+  actor {
+    provider = "cluster"
+    allow-java-serialization = on
+    warn-about-java-serializer-usage = off
+  }
+  remote.artery {
+    canonical.hostname = "127.0.0.1"
+    canonical.port = 0
+  }
+  cluster {
+    seed-nodes = ["pekko://ClusterSystem@127.0.0.1:25521"]
+    min-nr-of-members = 2
+    downing-provider-class = "org.apache.pekko.cluster.sbr.SplitBrainResolverProvider"
+    jmx.multi-mbeans-in-same-jvm = on
+  }
+}
+```
+
+| 설정 | Seed 노드 | Joining 노드 |
+|------|-----------|-------------|
+| `canonical.port` | 고정 포트 (예: 25521) | `0` (자동 할당) |
+| `seed-nodes` | 자기 자신 포함 | seed 노드만 지정 |
+| `min-nr-of-members` | `2` (멀티노드) | `2` (동일) |
+| `jmx.multi-mbeans-in-same-jvm` | `on` (같은 JVM 테스트용) | `on` (동일) |
+
+#### 8-4. 2-시스템 클러스터 테스트 패턴
+
+JUnit 5 + `ActorTestKit`에서 `companion object`로 2개의 테스트킷을 관리합니다.
+
+```kotlin
+@TestMethodOrder(MethodOrderer.OrderAnnotation::class)
+class TwoNodeClusterTest {
+    companion object {
+        private lateinit var seedTestKit: ActorTestKit
+        private lateinit var joiningTestKit: ActorTestKit
+
+        @JvmStatic
+        @BeforeAll
+        fun setup() {
+            seedTestKit = ActorTestKit.create("ClusterSystem",
+                ConfigFactory.load("two-node-seed"))
+            joiningTestKit = ActorTestKit.create("ClusterSystem",
+                ConfigFactory.load("two-node-joining"))
+            waitForClusterUp(seedTestKit, 2, 15)
+        }
+
+        @JvmStatic
+        @AfterAll
+        fun teardown() {
+            // joining 먼저 shutdown
+            joiningTestKit.shutdownTestKit()
+            seedTestKit.shutdownTestKit()
+        }
+
+        private fun waitForClusterUp(testKit: ActorTestKit,
+                expectedMembers: Int, timeoutSeconds: Int) {
+            val cluster = Cluster.get(testKit.system())
+            val deadline = System.currentTimeMillis() + (timeoutSeconds * 1000L)
+            while (System.currentTimeMillis() < deadline) {
+                val upCount = cluster.state().members
+                    .count { it.status() == MemberStatus.up() }
+                if (upCount >= expectedMembers) return
+                Thread.sleep(500)
+            }
+            throw RuntimeException(
+                "Cluster did not form within ${timeoutSeconds}s")
+        }
+    }
+}
+```
+
+> **Kotlin `count()` 확장**: Java의 `StreamSupport.stream()` 변환 대신, Kotlin에서는 Scala `Set`에 직접 `.count { }` 확장함수를 사용할 수 있습니다.
+
+#### 8-5. 크로스노드 PubSub
+
+기존 4번 PubSub과 달리, 크로스노드 전파 시 **양쪽 노드에 Topic 액터가 존재**해야 합니다.
+
+```kotlin
+// 1. 양쪽 노드에 PubSubManager (또는 Topic) 액터 생성
+val seedPubSub = seedTestKit.spawn(PubSubManagerActor.create(), "pubsub-seed")
+val joiningPubSub = joiningTestKit.spawn(PubSubManagerActor.create(), "pubsub-joining")
+
+// 2. 양쪽에서 동일 토픽에 구독 → Topic 액터가 양쪽 노드에 생성됨
+joiningPubSub.tell(SubscribeToTopic("my-topic", subscriberRef))
+seedPubSub.tell(SubscribeToTopic("my-topic", dummyRef))
+
+// 3. Topic 클러스터 전파 대기 (Receptionist 기반, 약 3~5초)
+Thread.sleep(5000)
+
+// 4. Seed 노드에서 발행 → Joining 노드 구독자에게 크로스노드 전달
+seedPubSub.tell(PublishMessage("my-topic", "cross-node-hello"))
+```
+
+| 주의사항 | 설명 |
+|---------|------|
+| 양쪽 Topic 생성 | 양쪽 노드에서 동일 토픽에 구독/발행하여 Topic 액터를 생성해야 함 |
+| Receptionist 전파 | Topic 액터는 Receptionist를 통해 자동 디스커버리 (3~5초 대기) |
+| Classic과의 차이 | mediator 대신 `Topic.create()` 액터 기반, 양쪽 노드에 Topic이 필요 |
+
 ## 코드 생성 규칙
 
 1. **패키지는 `org.apache.pekko.*`**를 사용합니다 (`akka.*`가 아님).
@@ -574,5 +754,8 @@ cluster.manager().tell(org.apache.pekko.cluster.typed.Join.create(cluster.selfMe
 9. **프로덕션 환경**에서는 반드시 Split Brain Resolver를 설정합니다.
 10. **Kotlin 타입 추론 주의**: `Routers.pool(size, behavior)` 형태로 Behavior를 두 번째 인자로 직접 전달합니다. 트레일링 람다 금지.
 11. **단일 노드 테스트** 시 `cluster.manager().tell(Join.create(address))`로 자기 자신에게 조인합니다.
+12. **크로스노드 통신** 시 모든 메시지 클래스는 `java.io.Serializable`을 구현하고, HOCON에 `allow-java-serialization = on`을 설정합니다.
+13. **멀티노드 테스트** 시 seed 노드(고정 포트)와 joining 노드(포트 0)의 HOCON을 분리하고, `min-nr-of-members = 2`를 설정합니다.
+14. **크로스노드 PubSub**은 양쪽 노드에 Topic 액터를 생성하여 Receptionist 기반 자동 디스커버리를 활성화합니다.
 
 $ARGUMENTS

@@ -28,9 +28,9 @@
 | 20 | sample19 | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed` | PASS | 1 passed |
 | 21 | sample20 | Java + Akka Classic 2.7.0 | `/java-akka-classic` | PASS | 1 passed |
 | 22 | sample21 | C# + Akka.NET 1.5.60 | `/dotnet-akka-net` | PASS | 1 passed |
-| 23 | sample-cluster-java | Java + Akka Classic 2.7.0 | `/java-akka-classic-cluster` | PASS | 3 passed |
-| 24 | sample-cluster-kotlin | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed-cluster` | PASS | 2 passed |
-| 25 | sample-cluster-dotnet | C# + Akka.NET 1.5.60 | `/dotnet-akka-net-cluster` | PASS | 3 passed |
+| 23 | sample-cluster-java | Java + Akka Classic 2.7.0 | `/java-akka-classic-cluster` | PASS | 7 passed (1-Node: 3, 2-Node: 4) |
+| 24 | sample-cluster-kotlin | Kotlin + Pekko Typed 1.1.3 | `/kotlin-pekko-typed-cluster` | PASS | 6 passed (1-Node: 2, 2-Node: 4) |
+| 25 | sample-cluster-dotnet | C# + Akka.NET 1.5.60 | `/dotnet-akka-net-cluster` | PASS | 7 passed (1-Node: 3, 2-Node: 4) |
 
 ---
 
@@ -833,7 +833,92 @@ Passed!  - Failed:     0, Passed:     3, Skipped:     0, Total:     3
 
 ---
 
+## sample-cluster-java (2-Node) — Java Akka Classic 2-Node 클러스터 테스트
+
+**컨셉**: 기존 1-Node 자기조인 테스트를 보완하여 실제 2노드 클러스터를 구성. seed 노드(고정 포트 25520)와 joining 노드(자동 포트)로 크로스노드 통신, 리모트 액터 접근, PubSub 전파를 검증한다. `ActorSelection`으로 리모트 카운터에 접근하고, `DistributedPubSub` mediator로 크로스노드 메시지 발행을 수행.
+
+**실행**: `cd skill-test/projects/sample-cluster-java && ./gradlew clean test`
+
+**테스트 결과**: 7/7 PASSED (1-Node: 3, 2-Node: 4)
+
+| 테스트 | 설명 | 결과 |
+|--------|------|------|
+| `bothNodesShouldBeUpInCluster` | seed/joining 양쪽 노드가 2개 멤버를 인식하고 모두 Up 상태 | PASS |
+| `clusterListenerShouldReceiveTwoMemberUpEvents` | ClusterListenerActor가 MemberUp 이벤트 2개를 수신 | PASS |
+| `counterShouldWorkAcrossNodes` | Seed 노드 카운터에 2회 증가 → Joining 노드에서 ActorSelection으로 1회 증가 → 카운트 3 확인 | PASS |
+| `pubSubShouldDeliverAcrossNodes` | Joining 노드에서 구독 → Seed 노드의 mediator로 발행 → 크로스노드 수신 확인 | PASS |
+
+```
+[INFO] Cluster Node [akka://TwoNodeClusterSystem@127.0.0.1:25520] - Node is JOINING itself and forming new cluster
+[INFO] Cluster Node [...] - Leader is moving node [...:25520] to [Up]
+[INFO] Cluster Node [...] - Leader is moving node [...:xxxxx] to [Up]
+[INFO] Member is Up: akka://TwoNodeClusterSystem@127.0.0.1:25520
+[INFO] Member is Up: akka://TwoNodeClusterSystem@127.0.0.1:xxxxx
+[INFO] Counter incremented to 3
+[INFO] Returning count: 3
+[INFO] Subscribed to topic: test-topic
+[INFO] Received message on topic [test-topic]: cross-node-hello
+BUILD SUCCESSFUL in 32s
+```
+
+---
+
+## sample-cluster-kotlin (2-Node) — Kotlin Pekko Typed 2-Node 클러스터 테스트
+
+**컨셉**: 2개의 `ActorTestKit`으로 seed 노드(고정 포트 25521)와 joining 노드(자동 포트)를 구성. Typed API 관용적 패턴인 `Receptionist`로 크로스노드 액터 디스커버리를 수행하고, `Topic<T>` API로 크로스노드 PubSub를 검증한다. `ClusterListenerActor`(신규 생성)는 `messageAdapter`로 `ClusterEvent.MemberUp`을 typed 메시지로 변환.
+
+**실행**: `cd skill-test/projects/sample-cluster-kotlin && sed -i 's/\r$//' gradlew && ./gradlew clean test`
+
+**테스트 결과**: 6/6 PASSED (1-Node: 2, 2-Node: 4)
+
+| 테스트 | 설명 | 결과 |
+|--------|------|------|
+| `both nodes should be Up in cluster` | seed/joining 양쪽 노드가 2개 멤버를 인식하고 모두 Up 상태 | PASS |
+| `cluster listener should receive two MemberUp events` | ClusterListenerActor가 messageAdapter 경유로 MemberUp 이벤트 2개 수신 | PASS |
+| `counter should work across nodes via Receptionist` | Seed 노드 카운터를 Receptionist에 등록 → Joining 노드에서 ServiceKey로 디스커버리 → 크로스노드 증가 | PASS |
+| `pubsub should deliver across nodes` | 양쪽 노드에 Topic 생성 → Seed 노드 발행 → Joining 노드 구독자 수신 | PASS |
+
+```
+[INFO] Cluster Node [pekko://TwoNodeClusterSystem@127.0.0.1:25521] - Node is JOINING itself and forming new cluster
+[INFO] Cluster Node [...] - Leader is moving node [...:25521] to [Up]
+[INFO] Cluster Node [...] - Leader is moving node [...:xxxxx] to [Up]
+[INFO] Counter incremented to 3
+BUILD SUCCESSFUL in 28s
+```
+
+---
+
+## sample-cluster-dotnet (2-Node) — C# Akka.NET 2-Node 클러스터 테스트
+
+**컨셉**: `IClassFixture<TwoNodeClusterFixture>` 패턴으로 seed 노드(고정 포트 25522)와 joining 노드(자동 포트)의 2개 `ActorSystem`을 공유. `MessageCollectorActor`(경량 프로브)로 비동기 메시지 수집 및 대기를 구현. `ActorSelection`으로 리모트 카운터 접근, `DistributedPubSub`로 크로스노드 PubSub 검증.
+
+**실행**: `cd skill-test/projects/sample-cluster-dotnet && dotnet test ClusterActors.sln`
+
+**테스트 결과**: 7/7 PASSED (1-Node: 3, 2-Node: 4)
+
+| 테스트 | 설명 | 결과 |
+|--------|------|------|
+| `BothNodes_should_be_Up_in_cluster` | seed/joining 양쪽 노드가 2개 멤버를 인식하고 모두 Up 상태 | PASS |
+| `ClusterListener_should_receive_two_MemberUp_events` | ClusterListenerActor가 collector에 "member-up" 메시지 2개 전달 | PASS |
+| `Counter_should_work_across_nodes` | Seed 노드 카운터에 2회 증가 → Joining 노드에서 ActorSelection으로 1회 증가 → 카운트 3 확인 | PASS |
+| `PubSub_should_deliver_across_nodes` | Joining 노드에서 PubSubSubscriberActor로 구독 → Seed 노드 mediator로 발행 → 크로스노드 수신 | PASS |
+
+```
+[INFO] Cluster Node [akka.tcp://TwoNodeClusterSystem@127.0.0.1:25522] - Started up successfully
+[INFO] Cluster Node [...] - Leader is moving node [...:25522] to [Up]
+[INFO] Cluster Node [...] - Leader is moving node [...:xxxxx] to [Up]
+[INFO] Counter incremented to 3
+[INFO] Returning count: 3
+[INFO] Subscribed to topic: test-topic
+[INFO] Received message on topic [test-topic]: cross-node-hello
+Passed!  - Failed: 0, Passed: 7, Skipped: 0, Total: 7
+```
+
+---
+
 ## 크로스 플랫폼 클러스터 테스트 비교
+
+### 1-Node 테스트 비교
 
 | 항목 | sample-cluster-java (Java Akka) | sample-cluster-kotlin (Kotlin Pekko) | sample-cluster-dotnet (C# Akka.NET) |
 |------|--------------------------------|-------------------------------------|-------------------------------------|
@@ -842,5 +927,22 @@ Passed!  - Failed:     0, Passed:     3, Skipped:     0, Total:     3
 | HOCON 네임스페이스 | `akka { }` | `pekko { }` | `akka { }` |
 | 프로토콜 | `akka://` (Artery) | `pekko://` (Artery) | `akka.tcp://` (dot-netty) |
 | PubSub API | `DistributedPubSub.get().mediator()` | `Topic.create()` 액터 기반 | `DistributedPubSub.Get().Mediator` |
-| 총 테스트 | 3 | 2 | 3 |
+| 1-Node 테스트 수 | 3 | 2 | 3 |
 | 빌드 도구 | Gradle (Kotlin DSL) | Gradle (Kotlin DSL) | dotnet test (xUnit) |
+
+### 2-Node 테스트 비교
+
+| 항목 | Java Akka Classic | Kotlin Pekko Typed | C# Akka.NET |
+|------|-------------------|-------------------|-------------|
+| seed 포트 | 25520 | 25521 | 25522 |
+| joining 포트 | 0 (자동) | 0 (자동) | 0 (자동) |
+| min-nr-of-members | 2 | 2 | 2 |
+| 크로스노드 액터 참조 | `ActorSelection` (경로 기반) | `Receptionist` (서비스 키 기반) | `ActorSelection` (경로 기반) |
+| 크로스노드 PubSub | `DistributedPubSub` mediator 직접 발행 | `Topic<T>` 양쪽 노드 생성 | `DistributedPubSub` mediator 직접 발행 |
+| 클러스터 이벤트 구독 | `cluster.subscribe(self, MemberUp.class)` | `messageAdapter` + `Cluster.subscriptions()` | `cluster.Subscribe(Self, typeof(MemberUp))` |
+| 직렬화 설정 | `allow-java-serialization = on` + `Serializable` | `allow-java-serialization = on` + `Serializable` | 기본 직렬화 (추가 설정 불필요) |
+| 테스트 시스템 생성 | 2개 `ActorSystem` + `@BeforeAll` | 2개 `ActorTestKit` + `companion object` | `IClassFixture` + 2개 `ActorSystem` |
+| 프로브 패턴 | `TestProbe` (akka-testkit) | `TestProbe<T>` (typed testkit) | `MessageCollectorActor` (커스텀) |
+| 클러스터 형성 대기 | `StreamSupport` 폴링 (Scala Iterable) | `.count()` 폴링 (Kotlin 확장) | `.Count()` 폴링 (LINQ) |
+| 2-Node 테스트 수 | 4 | 4 | 4 |
+| **총 테스트 수** | **7** | **6** | **7** |

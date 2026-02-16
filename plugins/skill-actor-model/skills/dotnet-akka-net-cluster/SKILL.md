@@ -554,6 +554,210 @@ builder.Services.AddAkka("ClusterSystem", config =>
 });
 ```
 
+### 8. 크로스노드 통신 & 멀티노드 테스트
+
+단일 노드 API 사용법은 1~7번 섹션으로 충분하지만, 실제 멀티노드 클러스터 운용 시에는 크로스노드 통신에 필요한 추가 패턴이 있습니다.
+
+#### 8-1. 크로스노드 액터 참조
+
+`ActorSelection`으로 다른 노드의 액터에 경로 기반으로 접근합니다.
+
+```csharp
+// 다른 노드의 액터에 접근 (원격 주소 + 액터 경로)
+var seedAddress = Cluster.Get(seedSystem).SelfAddress;
+var remoteActor = joiningSystem.ActorSelection($"{seedAddress}/user/myActor");
+remoteActor.Tell(message);
+```
+
+| 방법 | 코드 | 설명 |
+|------|------|------|
+| `ActorSelection` | `system.ActorSelection("akka.tcp://System@host:port/user/actor")` | 경로 기반 리모트 접근 |
+| `SelfAddress` | `Cluster.Get(system).SelfAddress` | 클러스터 노드의 원격 주소 획득 |
+
+#### 8-2. 크로스노드 메시지 직렬화
+
+Akka.NET은 기본 직렬화기(Hyperion)가 대부분의 C# 타입을 자동 처리하므로, **추가 직렬화 설정이 불필요**합니다.
+
+```csharp
+// record 메시지는 추가 설정 없이 크로스노드 통신 가능
+public sealed record Increment;
+public sealed record GetCount(IActorRef ReplyTo);
+public sealed record CountValue(int Value);
+```
+
+> **참고**: 커스텀 직렬화가 필요한 경우 `akka.actor.serialization-bindings`에서 설정할 수 있습니다.
+
+#### 8-3. 멀티노드 HOCON 설정 템플릿
+
+**Seed 노드** (고정 포트):
+
+```hocon
+akka {
+  actor.provider = cluster
+  remote.dot-netty.tcp {
+    hostname = "127.0.0.1"
+    port = 25522
+  }
+  cluster {
+    seed-nodes = ["akka.tcp://ClusterSystem@127.0.0.1:25522"]
+    min-nr-of-members = 2
+  }
+}
+```
+
+**Joining 노드** (자동 포트):
+
+```hocon
+akka {
+  actor.provider = cluster
+  remote.dot-netty.tcp {
+    hostname = "127.0.0.1"
+    port = 0
+  }
+  cluster {
+    seed-nodes = ["akka.tcp://ClusterSystem@127.0.0.1:25522"]
+    min-nr-of-members = 2
+  }
+}
+```
+
+| 설정 | Seed 노드 | Joining 노드 |
+|------|-----------|-------------|
+| `port` | 고정 포트 (예: 25522) | `0` (자동 할당) |
+| `seed-nodes` | 자기 자신 포함 | seed 노드만 지정 |
+| `min-nr-of-members` | `2` (멀티노드) | `2` (동일) |
+| 트랜스포트 | `dot-netty.tcp` | `dot-netty.tcp` (동일) |
+
+#### 8-4. 2-시스템 클러스터 테스트 패턴
+
+xUnit의 `IClassFixture<T>`로 2개의 `ActorSystem`을 공유하고, `MessageCollectorActor`로 메시지를 수집합니다.
+
+**클러스터 Fixture**:
+
+```csharp
+public sealed class TwoNodeClusterFixture : IDisposable
+{
+    public ActorSystem SeedSystem { get; }
+    public ActorSystem JoiningSystem { get; }
+
+    public TwoNodeClusterFixture()
+    {
+        SeedSystem = ActorSystem.Create("ClusterSystem",
+            ConfigurationFactory.ParseString(SeedConfig));
+        JoiningSystem = ActorSystem.Create("ClusterSystem",
+            ConfigurationFactory.ParseString(JoiningConfig));
+        WaitForClusterUp(SeedSystem, 2, 15);
+    }
+
+    private static void WaitForClusterUp(ActorSystem system,
+        int expectedMembers, int timeoutSeconds)
+    {
+        var cluster = Cluster.Get(system);
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            var upCount = cluster.State.Members
+                .Count(m => m.Status == MemberStatus.Up);
+            if (upCount >= expectedMembers) return;
+            Thread.Sleep(500);
+        }
+        throw new Exception(
+            $"Cluster did not form with {expectedMembers} members");
+    }
+
+    public void Dispose()
+    {
+        // joining 먼저 leave → seed 마지막 terminate
+        var joiningCluster = Cluster.Get(JoiningSystem);
+        joiningCluster.Leave(joiningCluster.SelfAddress);
+        JoiningSystem.Terminate().Wait(TimeSpan.FromSeconds(10));
+        SeedSystem.Terminate().Wait(TimeSpan.FromSeconds(10));
+    }
+}
+```
+
+**MessageCollectorActor** (TestKit 대신 사용):
+
+```csharp
+public class MessageCollectorActor : ReceiveActor
+{
+    private readonly List<object> _messages = new();
+
+    public sealed record GetCollected(TaskCompletionSource<List<object>> Tcs);
+
+    public MessageCollectorActor()
+    {
+        Receive<GetCollected>(msg =>
+            msg.Tcs.TrySetResult(new List<object>(_messages)));
+        ReceiveAny(msg => _messages.Add(msg));
+    }
+
+    public static async Task<List<object>> WaitForMessages(
+        IActorRef collector, int count, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow.Add(timeout);
+        while (DateTime.UtcNow < deadline)
+        {
+            var tcs = new TaskCompletionSource<List<object>>();
+            collector.Tell(new GetCollected(tcs));
+            var result = await tcs.Task;
+            if (result.Count >= count) return result;
+            await Task.Delay(200);
+        }
+        throw new TimeoutException($"Expected {count} messages");
+    }
+}
+```
+
+**테스트 클래스**:
+
+```csharp
+public class TwoNodeClusterTests : IClassFixture<TwoNodeClusterFixture>
+{
+    private readonly TwoNodeClusterFixture _f;
+
+    public TwoNodeClusterTests(TwoNodeClusterFixture fixture)
+    {
+        _f = fixture;
+    }
+
+    [Fact]
+    public void BothNodes_should_be_Up()
+    {
+        var seedCluster = Cluster.Get(_f.SeedSystem);
+        Assert.Equal(2, seedCluster.State.Members.Count);
+    }
+}
+```
+
+> **TestKit 대신 MessageCollectorActor**: Akka.NET TestKit은 단일 시스템에 바인딩되므로, 2-시스템 테스트에서는 `MessageCollectorActor`로 메시지를 수집하고 폴링으로 대기합니다.
+
+#### 8-5. 크로스노드 PubSub
+
+기존 4번 PubSub과 달리, 크로스노드 전파 시 추가 주의사항이 있습니다.
+
+```csharp
+// 1. 양쪽 노드의 mediator를 사전 초기화
+var seedMediator = DistributedPubSub.Get(seedSystem).Mediator;
+
+// 2. 한쪽 노드에서 구독
+joiningSystem.ActorOf(
+    Props.Create(() => new SubscriberActor("topic", collector)),
+    "subscriber");
+
+// 3. 구독 정보 클러스터 전파 대기 (약 3~5초)
+await Task.Delay(5000);
+
+// 4. 다른 노드의 mediator로 직접 발행 (크로스노드)
+seedMediator.Tell(new Publish("topic", "cross-node-msg"));
+```
+
+| 주의사항 | 설명 |
+|---------|------|
+| mediator 사전 초기화 | 발행 노드에서 `DistributedPubSub.Get(system).Mediator` 호출 필요 |
+| 전파 대기 | 구독 후 크로스노드 전파까지 3~5초 대기 필요 |
+| 직접 발행 | `PublisherActor` 대신 mediator에 직접 `Publish` 전달 가능 |
+
 ## 코드 생성 규칙
 
 1. **액터는 `ReceiveActor`를 상속**하고 생성자에서 `Receive<T>(handler)`를 등록합니다.
@@ -567,5 +771,8 @@ builder.Services.AddAkka("ClusterSystem", config =>
 9. **DI 통합**은 `Akka.Hosting`의 `.WithClustering()` + `.WithSingleton()` + `.WithShardRegion()` 패턴을 권장합니다.
 10. **역할(role)**을 활용하여 노드별 기능을 분리합니다.
 11. **단일 노드 테스트** 시 `cluster.Join(cluster.SelfAddress)`로 자기 자신에게 조인합니다.
+12. **크로스노드 통신** 시 메시지 직렬화 설정은 추가 불필요합니다 (Hyperion이 기본 직렬화기).
+13. **멀티노드 테스트** 시 seed 노드(고정 포트)와 joining 노드(포트 0)의 HOCON을 분리하고, `min-nr-of-members = 2`를 설정합니다.
+14. **크로스노드 PubSub**은 발행 노드의 mediator를 사전 초기화하고, 구독 전파 대기(3~5초) 후 발행합니다.
 
 $ARGUMENTS

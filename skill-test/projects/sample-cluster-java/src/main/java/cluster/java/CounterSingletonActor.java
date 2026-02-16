@@ -6,6 +6,8 @@ import akka.actor.Props;
 import akka.event.Logging;
 import akka.event.LoggingAdapter;
 
+import java.io.Serializable;
+
 /**
  * A simple counter actor designed for use as a cluster singleton.
  * Supports Increment and GetCount messages.
@@ -18,13 +20,13 @@ public class CounterSingletonActor extends AbstractActor {
     // --- Messages ---
 
     /** Increment the counter by one. Singleton instance. */
-    public static final class Increment {
+    public static final class Increment implements Serializable {
         public static final Increment INSTANCE = new Increment();
         private Increment() {}
     }
 
     /** Request the current count. The reply is sent to the provided replyTo reference. */
-    public static final class GetCount {
+    public static final class GetCount implements Serializable {
         private final ActorRef replyTo;
 
         public GetCount(ActorRef replyTo) {
@@ -37,7 +39,7 @@ public class CounterSingletonActor extends AbstractActor {
     }
 
     /** Response message carrying the current count value. */
-    public static final class CountValue {
+    public static final class CountValue implements Serializable {
         private final int value;
 
         public CountValue(int value) {

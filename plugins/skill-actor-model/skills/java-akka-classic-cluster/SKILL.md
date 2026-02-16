@@ -644,6 +644,187 @@ Cluster cluster = Cluster.get(system);
 cluster.join(cluster.selfAddress());
 ```
 
+### 8. 크로스노드 통신 & 멀티노드 테스트
+
+단일 노드 API 사용법은 1~7번 섹션으로 충분하지만, 실제 멀티노드 클러스터 운용 시에는 크로스노드 통신에 필요한 추가 패턴이 있습니다.
+
+#### 8-1. 크로스노드 액터 참조
+
+`ActorSelection`으로 다른 노드의 액터에 경로 기반으로 접근합니다.
+
+```java
+// 다른 노드의 액터에 접근 (원격 주소 + 액터 경로)
+String remotePath = otherSystem.provider().getDefaultAddress() + "/user/myActor";
+var remoteActor = localSystem.actorSelection(remotePath);
+remoteActor.tell(message, getSelf());
+```
+
+| 방법 | 코드 | 설명 |
+|------|------|------|
+| `ActorSelection` | `system.actorSelection("akka://System@host:port/user/actor")` | 경로 기반 리모트 접근 |
+| `getDefaultAddress()` | `system.provider().getDefaultAddress()` | 시스템의 원격 주소 획득 |
+
+#### 8-2. 크로스노드 메시지 직렬화
+
+크로스노드 통신 시 모든 메시지는 네트워크를 통해 전송되므로 **직렬화 가능**해야 합니다.
+
+```java
+// 메시지 클래스에 Serializable 구현 필수
+public static final class Increment implements java.io.Serializable {
+    public static final Increment INSTANCE = new Increment();
+}
+
+public static final class GetCount implements java.io.Serializable {
+    private final ActorRef replyTo;
+    public GetCount(ActorRef replyTo) { this.replyTo = replyTo; }
+    public ActorRef getReplyTo() { return replyTo; }
+}
+```
+
+```hocon
+akka.actor {
+  allow-java-serialization = on
+  warn-about-java-serializer-usage = off
+}
+```
+
+> **주의**: Java 직렬화는 개발/테스트용입니다. 프로덕션에서는 Jackson JSON 또는 Protobuf를 권장합니다.
+
+#### 8-3. 멀티노드 HOCON 설정 템플릿
+
+**Seed 노드** (고정 포트):
+
+```hocon
+akka {
+  actor {
+    provider = cluster
+    allow-java-serialization = on
+    warn-about-java-serializer-usage = off
+  }
+  remote.artery {
+    canonical.hostname = "127.0.0.1"
+    canonical.port = 25520
+  }
+  cluster {
+    seed-nodes = ["akka://ClusterSystem@127.0.0.1:25520"]
+    min-nr-of-members = 2
+    downing-provider-class = "akka.cluster.sbr.SplitBrainResolverProvider"
+    jmx.multi-mbeans-in-same-jvm = on
+  }
+}
+```
+
+**Joining 노드** (자동 포트):
+
+```hocon
+akka {
+  actor {
+    provider = cluster
+    allow-java-serialization = on
+    warn-about-java-serializer-usage = off
+  }
+  remote.artery {
+    canonical.hostname = "127.0.0.1"
+    canonical.port = 0
+  }
+  cluster {
+    seed-nodes = ["akka://ClusterSystem@127.0.0.1:25520"]
+    min-nr-of-members = 2
+    downing-provider-class = "akka.cluster.sbr.SplitBrainResolverProvider"
+    jmx.multi-mbeans-in-same-jvm = on
+  }
+}
+```
+
+| 설정 | Seed 노드 | Joining 노드 |
+|------|-----------|-------------|
+| `canonical.port` | 고정 포트 (예: 25520) | `0` (자동 할당) |
+| `seed-nodes` | 자기 자신 포함 | seed 노드만 지정 |
+| `min-nr-of-members` | `2` (멀티노드) | `2` (동일) |
+| `jmx.multi-mbeans-in-same-jvm` | `on` (같은 JVM 테스트용) | `on` (동일) |
+
+#### 8-4. 2-시스템 클러스터 테스트 패턴
+
+JUnit 5에서 `@BeforeAll`/`@AfterAll`로 2개의 `ActorSystem`을 관리합니다.
+
+```java
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class TwoNodeClusterTest {
+    private static ActorSystem seedSystem;
+    private static ActorSystem joiningSystem;
+
+    @BeforeAll
+    static void setup() throws InterruptedException {
+        seedSystem = ActorSystem.create("ClusterSystem",
+                ConfigFactory.load("two-node-seed"));
+        joiningSystem = ActorSystem.create("ClusterSystem",
+                ConfigFactory.load("two-node-joining"));
+        waitForClusterUp(seedSystem, 2, 15);
+    }
+
+    @AfterAll
+    static void teardown() {
+        // joining 먼저 leave → seed 마지막 shutdown
+        if (joiningSystem != null) {
+            Cluster.get(joiningSystem).leave(
+                Cluster.get(joiningSystem).selfAddress());
+            TestKit.shutdownActorSystem(joiningSystem,
+                FiniteDuration.apply(10, TimeUnit.SECONDS), true);
+        }
+        if (seedSystem != null) {
+            TestKit.shutdownActorSystem(seedSystem,
+                FiniteDuration.apply(10, TimeUnit.SECONDS), true);
+        }
+    }
+
+    /** Scala Iterable → Java Stream 변환으로 Up 멤버 수 폴링 */
+    private static void waitForClusterUp(ActorSystem system,
+            int expectedMembers, int timeoutSeconds)
+            throws InterruptedException {
+        Cluster cluster = Cluster.get(system);
+        long deadline = System.currentTimeMillis() + (timeoutSeconds * 1000L);
+        while (System.currentTimeMillis() < deadline) {
+            long upCount = StreamSupport.stream(
+                    cluster.state().getMembers().spliterator(), false)
+                    .filter(m -> m.status().equals(MemberStatus.up()))
+                    .count();
+            if (upCount >= expectedMembers) return;
+            Thread.sleep(500);
+        }
+        throw new RuntimeException(
+            "Cluster did not form within " + timeoutSeconds + "s");
+    }
+}
+```
+
+> **Scala 컬렉션 호환**: `cluster.state().getMembers()`는 Scala `Set`을 반환합니다. `StreamSupport.stream(iterable.spliterator(), false)`로 Java Stream 변환이 필요합니다.
+
+#### 8-5. 크로스노드 PubSub
+
+기존 4번 PubSub과 달리, 크로스노드 전파 시 추가 주의사항이 있습니다.
+
+```java
+// 1. 양쪽 노드의 mediator를 사전 초기화
+ActorRef seedMediator = DistributedPubSub.get(seedSystem).mediator();
+
+// 2. 한쪽 노드에서 구독
+joiningSystem.actorOf(SubscriberActor.props("topic", probe), "subscriber");
+
+// 3. 구독 정보 클러스터 전파 대기 (약 3~5초)
+Thread.sleep(5000);
+
+// 4. 다른 노드의 mediator로 직접 발행 (크로스노드)
+seedMediator.tell(
+    new DistributedPubSubMediator.Publish("topic", "cross-node-msg"),
+    ActorRef.noSender());
+```
+
+| 주의사항 | 설명 |
+|---------|------|
+| mediator 사전 초기화 | 발행 노드에서 `DistributedPubSub.get(system).mediator()` 호출 필요 |
+| 전파 대기 | 구독 후 크로스노드 전파까지 3~5초 대기 필요 |
+| 직접 발행 | `PublisherActor` 대신 mediator에 직접 `Publish` 전달 가능 |
+
 ## 코드 생성 규칙
 
 1. **클러스터 멤버십 이벤트**는 `Cluster.get(system).subscribe(self, ...)` 로 구독합니다.
@@ -656,5 +837,8 @@ cluster.join(cluster.selfAddress());
 8. **HOCON 설정**은 `akka { }` 블록에 작성하며, `actor.provider = cluster`를 지정합니다.
 9. **역할(role)**을 활용하여 노드별 기능을 분리합니다.
 10. **단일 노드 테스트** 시 `cluster.join(cluster.selfAddress())`로 자기 자신에게 조인합니다.
+11. **크로스노드 통신** 시 모든 메시지 클래스는 `java.io.Serializable`을 구현하고, HOCON에 `allow-java-serialization = on`을 설정합니다.
+12. **멀티노드 테스트** 시 seed 노드(고정 포트)와 joining 노드(포트 0)의 HOCON을 분리하고, `min-nr-of-members = 2`를 설정합니다.
+13. **크로스노드 PubSub**은 발행 노드의 mediator를 사전 초기화하고, 구독 전파 대기(3~5초) 후 발행합니다.
 
 $ARGUMENTS
