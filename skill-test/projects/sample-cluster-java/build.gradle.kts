@@ -1,6 +1,7 @@
 plugins {
     java
-    application
+    id("org.springframework.boot") version "3.5.0"
+    id("io.spring.dependency-management") version "1.1.7"
 }
 
 group = "cluster.java"
@@ -11,27 +12,27 @@ repositories {
 }
 
 val akkaVersion = "2.7.0"
+val scalaBinaryVersion = "2.13"
 
 dependencies {
-    implementation("com.typesafe.akka:akka-actor_2.13:$akkaVersion")
-    implementation("com.typesafe.akka:akka-cluster_2.13:$akkaVersion")
-    implementation("com.typesafe.akka:akka-cluster-tools_2.13:$akkaVersion")
-    implementation("com.typesafe.akka:akka-stream_2.13:$akkaVersion")
-    implementation("com.typesafe.akka:akka-stream-kafka_2.13:4.0.2")
-    implementation("com.typesafe.akka:akka-slf4j_2.13:$akkaVersion")
-    implementation("ch.qos.logback:logback-classic:1.4.14")
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5")
 
-    testImplementation("com.typesafe.akka:akka-testkit_2.13:$akkaVersion")
+    implementation("com.typesafe.akka:akka-actor_$scalaBinaryVersion:$akkaVersion")
+    implementation("com.typesafe.akka:akka-cluster_$scalaBinaryVersion:$akkaVersion")
+    implementation("com.typesafe.akka:akka-cluster-tools_$scalaBinaryVersion:$akkaVersion")
+    implementation("com.typesafe.akka:akka-stream_$scalaBinaryVersion:$akkaVersion")
+    implementation("com.typesafe.akka:akka-stream-kafka_$scalaBinaryVersion:4.0.2")
+    implementation("com.typesafe.akka:akka-slf4j_$scalaBinaryVersion:$akkaVersion")
+
+    testImplementation("com.typesafe.akka:akka-testkit_$scalaBinaryVersion:$akkaVersion")
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
-}
-
-application {
-    mainClass.set("cluster.java.Main")
 }
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
+        languageVersion.set(JavaLanguageVersion.of(21))
     }
 }
 

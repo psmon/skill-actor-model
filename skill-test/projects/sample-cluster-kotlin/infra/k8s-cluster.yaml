@@ -35,6 +35,9 @@ spec:
   selector:
     app: pekko-cluster
   ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
     - name: remoting
       port: 25520
       targetPort: 25520
@@ -64,6 +67,8 @@ spec:
           image: sample-cluster-kotlin:latest
           imagePullPolicy: Never
           ports:
+            - containerPort: 8080
+              name: http
             - containerPort: 25520
               name: remoting
             - containerPort: 8558
@@ -73,6 +78,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: SERVER_PORT
+              value: "8080"
             - name: CLUSTER_HOSTNAME
               value: "$(POD_NAME).pekko-cluster.default.svc.cluster.local"
             - name: CLUSTER_PORT
@@ -97,10 +104,9 @@ spec:
               value: "cluster-kotlin-events"
             - name: KAFKA_GROUP_ID_PREFIX
               value: "cluster-kotlin-group"
-            - name: KAFKA_START_DELAY_SECONDS
-              value: "20"
           readinessProbe:
-            tcpSocket:
-              port: 25520
-            initialDelaySeconds: 15
+            httpGet:
+              path: /api/heath
+              port: 8080
+            initialDelaySeconds: 20
             periodSeconds: 5

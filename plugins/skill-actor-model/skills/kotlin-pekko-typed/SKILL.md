@@ -865,3 +865,29 @@ class ActorController @Autowired constructor(private val akka: AkkaConfiguration
 12. **Broadcast 라우팅**은 Pekko Typed PoolRouter에 내장 전략이 없으므로, 워커를 직접 스폰하고 `workers.forEach { it.tell(msg) }` 로 fan-out하는 커스텀 액터로 구현합니다.
 
 $ARGUMENTS
+
+## WebApplication 통합 업데이트 (2026-02-17)
+
+- 콘솔 엔트리 중심 샘플을 웹 API 중심으로 확장할 때 아래 기본 API를 우선 제공합니다.
+  - `GET /api/heath`
+  - `GET /api/actor/hello`
+  - `GET /api/cluster/info`
+  - `POST /api/kafka/fire-event`
+- Kafka 실행은 스케줄러 자동 실행보다 API 트리거 방식을 우선합니다.
+- Swagger/OpenAPI와 파일 기반 로깅 구성을 기본 포함합니다.
+- 플랫폼별 권장 웹 모드:
+  - .NET: ASP.NET Core (.NET 10)
+  - Java: Spring Boot MVC (Java 21, Spring Boot 3.5.x)
+  - Kotlin: Spring WebFlux + Coroutine (Spring Boot 3.5.x)
+
+## Web + Actor 통합 주의사항 (2026-02)
+
+1. 웹 진입점과 ActorSystem 수명주기를 분리하지 말고, 시작/종료 훅(HostedService, Spring Lifecycle)으로 일원화합니다.
+2. `/api/cluster/info`는 반드시 ActorSystem 상태에서 조회하며, API 계층 캐시를 두지 않습니다.
+3. Ask 패턴은 언어별 표준을 고정합니다.
+   - Dotnet classic: `Sender` 응답 + `Ask(object, timeout)`
+   - Java classic: `PatternsCS.ask(..., Duration)`
+   - Kotlin typed: `AskPattern.ask(...).await()`
+4. `/api/kafka/fire-event`는 스케줄 자동 발행 대신 API 수동 트리거를 기본으로 둡니다.
+5. Swagger 버전은 런타임 메이저와 일치시킵니다(특히 .NET).
+6. 파일 로깅은 `logback-spring.xml`/Serilog file sink로 구성하고, 콘솔 로깅과 함께 유지합니다.

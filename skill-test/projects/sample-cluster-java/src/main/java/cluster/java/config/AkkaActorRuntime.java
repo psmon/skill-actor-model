@@ -1,4 +1,4 @@
-package cluster.java;
+package cluster.java.config;
 
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
@@ -6,18 +6,27 @@ import akka.cluster.singleton.ClusterSingletonManager;
 import akka.cluster.singleton.ClusterSingletonManagerSettings;
 import akka.cluster.singleton.ClusterSingletonProxy;
 import akka.cluster.singleton.ClusterSingletonProxySettings;
-import com.typesafe.config.ConfigFactory;
+import cluster.java.ClusterInfoActor;
+import cluster.java.ClusterListenerActor;
+import cluster.java.KafkaStreamSingletonActor;
+import cluster.java.infra.SpringExtensionProvider;
 import com.typesafe.config.Config;
+import com.typesafe.config.ConfigFactory;
+import jakarta.annotation.PreDestroy;
+import org.springframework.context.ApplicationContext;
+import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 
-/**
- * Main entry point for the cluster application.
- * Creates the ActorSystem, spawns ClusterListenerActor, and blocks until terminated.
- */
-public class Main {
+@Component
+public class AkkaActorRuntime {
 
-    public static void main(String[] args) {
+    private final ActorSystem actorSystem;
+    private final ActorRef helloActor;
+    private final ActorRef clusterInfoActor;
+    private final ActorRef kafkaSingletonProxy;
+
+    public AkkaActorRuntime(ApplicationContext applicationContext) {
         StringBuilder overrides = new StringBuilder();
         String hostname = System.getenv("CLUSTER_HOSTNAME");
         if (hostname != null) overrides.append("akka.remote.artery.canonical.hostname = \"").append(hostname).append("\"\n");
@@ -27,19 +36,18 @@ public class Main {
         if (seedNodes != null) overrides.append("akka.cluster.seed-nodes = ").append(seedNodes).append("\n");
         String minNr = System.getenv("CLUSTER_MIN_NR");
         if (minNr != null) overrides.append("akka.cluster.min-nr-of-members = ").append(minNr).append("\n");
+
+        Config config = ConfigFactory.parseString(overrides.toString()).withFallback(ConfigFactory.load());
+        this.actorSystem = ActorSystem.create("ClusterSystem", config);
+
+        SpringExtensionProvider.getInstance().get(actorSystem).initialize(applicationContext);
+
         String kafkaBootstrapServers = System.getenv().getOrDefault(
             "KAFKA_BOOTSTRAP_SERVERS", "kafka.default.svc.cluster.local:9092");
         String kafkaTopic = System.getenv().getOrDefault("KAFKA_TOPIC", "cluster-java-events");
         String kafkaGroupIdPrefix = System.getenv().getOrDefault("KAFKA_GROUP_ID_PREFIX", "cluster-java-group");
-        int kafkaStartDelaySeconds = Integer.parseInt(System.getenv().getOrDefault("KAFKA_START_DELAY_SECONDS", "15"));
-        int requiredMembers = Integer.parseInt(System.getenv().getOrDefault("CLUSTER_MIN_NR", "1"));
 
-        Config config = ConfigFactory.parseString(overrides.toString())
-            .withFallback(ConfigFactory.load());
-
-        ActorSystem system = ActorSystem.create("ClusterSystem", config);
-
-        system.actorOf(
+        actorSystem.actorOf(
             ClusterSingletonManager.props(
                 KafkaStreamSingletonActor.props(
                     kafkaBootstrapServers,
@@ -47,26 +55,42 @@ public class Main {
                     kafkaGroupIdPrefix,
                     Duration.ofSeconds(30)),
                 KafkaStreamSingletonActor.Stop.INSTANCE,
-                ClusterSingletonManagerSettings.create(system)),
+                ClusterSingletonManagerSettings.create(actorSystem)),
             "kafkaStreamSingletonManager");
 
-        ActorRef kafkaSingletonProxy = system.actorOf(
+        this.kafkaSingletonProxy = actorSystem.actorOf(
             ClusterSingletonProxy.props(
                 "/user/kafkaStreamSingletonManager",
-                ClusterSingletonProxySettings.create(system)),
+                ClusterSingletonProxySettings.create(actorSystem)),
             "kafkaStreamSingletonProxy");
 
-        system.actorOf(
-            ClusterListenerActor.props(
-                system.deadLetters(),
-                kafkaSingletonProxy,
-                requiredMembers,
-                Duration.ofSeconds(kafkaStartDelaySeconds)),
-            "clusterListener"
-        );
+        this.helloActor = actorSystem.actorOf(
+            SpringExtensionProvider.getInstance().get(actorSystem).props("helloActorBean"),
+            "helloActor");
 
-        System.out.println("Cluster system started: " + system.name());
+        this.clusterInfoActor = actorSystem.actorOf(ClusterInfoActor.props(), "clusterInfoActor");
+        actorSystem.actorOf(ClusterListenerActor.props(actorSystem.deadLetters()), "clusterListener");
 
-        system.getWhenTerminated().toCompletableFuture().join();
+    }
+
+    public ActorSystem actorSystem() {
+        return actorSystem;
+    }
+
+    public ActorRef helloActor() {
+        return helloActor;
+    }
+
+    public ActorRef clusterInfoActor() {
+        return clusterInfoActor;
+    }
+
+    public ActorRef kafkaSingletonProxy() {
+        return kafkaSingletonProxy;
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        actorSystem.terminate();
     }
 }

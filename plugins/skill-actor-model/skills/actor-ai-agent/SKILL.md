@@ -17,10 +17,25 @@ Memorizer v1 아키텍처를 참조 모델로 합니다.
 
 ## 환경
 
-- **프레임워크**: Akka.NET 1.5.x + ASP.NET Core
-- **언어**: C# (.NET 9.0)
+- **프레임워크**: Akka.NET 1.5.x
+- **언어**: C# (.NET 10 권장)
 - **외부 통합**: OpenAI LLM API, PostgreSQL (pgvector), Neo4j Graph DB
 - **라이선스**: Apache License 2.0
+
+## 코어 스킬 조합 방식 (최신)
+
+AI-agent 스킬은 단독으로 쓰기보다 코어 스킬과 조합해 사용합니다.
+
+1. `dotnet-akka-net`으로 메시지 계약/액터 책임/기본 수명주기 규칙을 먼저 고정합니다.
+2. 클러스터가 필요하면 `dotnet-akka-net-cluster`로 singleton/sharding/pubsub 경계를 분리합니다.
+3. 배포 대상이 분산 환경이면 `dotnet-akka-net-infra` 규칙(주소/seed/health/readiness)을 선반영합니다.
+4. 마지막에 본 스킬(`actor-ai-agent`)로 오케스트레이터 단계(Analyze/Search/Decision/Final + SideTask)를 얹습니다.
+
+조합 시 고정 원칙:
+- 오케스트레이터는 상태 전환(`Become`)만 담당하고, 단계 액터는 단일 책임을 유지합니다.
+- 외부 I/O(LLM/DB)는 결과를 self-message로 환원해 액터 순차 처리를 보장합니다.
+- 사용자 응답 경로와 Fire-and-Forget 사이드태스크 경로를 분리합니다.
+- Ask/Reply 계약은 코어 스킬의 언어 표준을 그대로 따릅니다.
 
 ## 핵심 아키텍처: Actor as AI Pipeline Stage
 

@@ -25,7 +25,6 @@ public class ClusterActorTests : TestKit
 
     public ClusterActorTests() : base(ConfigurationFactory.ParseString(HoconConfig))
     {
-        // Single-node cluster: join self
         var cluster = Cluster.Get(Sys);
         cluster.Join(cluster.SelfAddress);
         AwaitAssert(() =>
@@ -41,6 +40,26 @@ public class ClusterActorTests : TestKit
         var listener = Sys.ActorOf(Props.Create(() => new ClusterListenerActor(TestActor)));
         ExpectMsg("member-up", TimeSpan.FromSeconds(5));
         ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+    }
+
+    [Fact]
+    public void HelloActor_should_reply_welcome_message()
+    {
+        var actor = Sys.ActorOf(Props.Create(() => new HelloActor(new WelcomeMessageProvider())));
+        actor.Tell(new HelloActor.Hello("hello"), TestActor);
+
+        var response = ExpectMsg<HelloActor.HelloResponse>(TimeSpan.FromSeconds(3));
+        Assert.Equal("wellcome actor world!", response.Message);
+    }
+
+    [Fact]
+    public void ClusterInfoActor_should_return_self_member()
+    {
+        var actor = Sys.ActorOf(Props.Create(() => new ClusterInfoActor()));
+        actor.Tell(new ClusterInfoActor.GetClusterInfo(), TestActor);
+
+        var response = ExpectMsg<ClusterInfoActor.ClusterInfoResponse>(TimeSpan.FromSeconds(3));
+        Assert.True(response.MemberCount >= 1);
     }
 
     [Fact]
@@ -63,7 +82,6 @@ public class ClusterActorTests : TestKit
         var subscriber = Sys.ActorOf(
             Props.Create(() => new PubSubSubscriberActor("test-topic", TestActor)));
 
-        // Wait for subscription acknowledgment
         ExpectMsg("subscribed", TimeSpan.FromSeconds(5));
 
         var publisher = Sys.ActorOf(Props.Create<PubSubPublisherActor>());

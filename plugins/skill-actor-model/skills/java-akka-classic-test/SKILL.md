@@ -85,3 +85,26 @@ expectNoMessage(Duration.ofMillis(200));
 
 - [skill-maker/docs/actor/testkit/java-akka-classic-test.md](../../../../skill-maker/docs/actor/testkit/java-akka-classic-test.md)
 - [plugins/skill-actor-model/skills/java-akka-classic/SKILL.md](../java-akka-classic/SKILL.md)
+
+## WebApplication 통합 업데이트 (2026-02-17)
+
+- 콘솔 엔트리 중심 샘플을 웹 API 중심으로 확장할 때 아래 기본 API를 우선 제공합니다.
+  - `GET /api/heath`
+  - `GET /api/actor/hello`
+  - `GET /api/cluster/info`
+  - `POST /api/kafka/fire-event`
+- Kafka 실행은 스케줄러 자동 실행보다 API 트리거 방식을 우선합니다.
+- Swagger/OpenAPI와 파일 기반 로깅 구성을 기본 포함합니다.
+- 플랫폼별 권장 웹 모드:
+  - .NET: ASP.NET Core (.NET 10)
+  - Java: Spring Boot MVC (Java 21, Spring Boot 3.5.x)
+  - Kotlin: Spring WebFlux + Coroutine (Spring Boot 3.5.x)
+
+## Web 전환 테스트 주의사항 (2026-02)
+
+1. 기존 actor 단위 테스트를 유지한 상태에서 웹 전환으로 추가된 메시지 계약 테스트를 반드시 보강합니다.
+2. `/api/actor/hello`, `/api/cluster/info`, `/api/kafka/fire-event`에 대응하는 액터 응답 테스트를 각각 둡니다.
+3. Kafka 트리거는 스케줄 기반이 아닌 API 단발 실행 기준으로 테스트 시나리오를 갱신합니다.
+4. 클러스터 테스트는 최소 2노드 Up 상태를 확인한 뒤 기능 테스트를 수행합니다.
+5. 종료 테스트는 actor stop/coordinated shutdown 확인에 집중하고 Kafka 종료는 제외합니다.
+6. 런타임 버전 제약이 있을 경우(예: net10) SDK 컨테이너 기반 테스트 경로를 같이 제공합니다.

@@ -1,91 +1,45 @@
-# sample-cluster-java — Java Akka Classic Cluster
+# sample-cluster-java — Spring MVC + Akka Classic
 
-Java + Akka Classic 2.7.0 기반 클러스터 프로젝트.
+Spring Boot 3.5.x + Java 21 + Akka Classic 2.7.x 기반 클러스터 웹 애플리케이션입니다.
 
-## 구조
+## 핵심 스택
+- Java 21
+- Spring Boot 3.5.0 (`spring-boot-starter-web`)
+- Akka Classic Cluster + Cluster Singleton
+- Spring-Akka Extension 기반 DI(`helloActorBean`)
+- Swagger UI (`/swagger`)
+- Logback 파일 로깅(`logs/sample-cluster-java*.log`)
 
-```
-src/main/java/cluster/java/
-├── Main.java                  # 엔트리포인트 (ActorSystem + getWhenTerminated 블로킹)
-├── ClusterListenerActor.java  # 클러스터 이벤트 리스너 (MemberUp/Unreachable/Removed)
-├── CounterSingletonActor.java # Singleton 카운터 액터
-├── KafkaStreamSingletonActor.java # Alpakka Kafka Streams 1회 실행 싱글톤
-├── PubSubPublisherActor.java  # DistributedPubSub 발행자
-└── PubSubSubscriberActor.java # DistributedPubSub 구독자
+## API
+- `GET /api/heath`
+- `GET /api/actor/hello` -> `wellcome actor world!`
+- `GET /api/cluster/info` -> ActorSystem 클러스터 정보
+- `POST /api/kafka/fire-event` -> Kafka 1회 발행/수신 round-trip
 
-src/main/resources/
-└── application.conf           # HOCON 설정 (환경변수 fallback 지원)
-
-src/test/java/cluster/java/
-├── ClusterActorTest.java      # 1-Node 클러스터 테스트 (3 tests)
-├── TwoNodeClusterTest.java    # 2-Node 클러스터 테스트 (4 tests)
-└── KafkaStreamSingletonActorTest.java # Kafka 싱글톤 1회 실행 보장 테스트
-
-infra/
-├── Dockerfile                 # 멀티스테이지 빌드 (gradle → temurin JRE)
-└── k8s-cluster.yaml           # Headless Service + StatefulSet (2 replicas)
-```
-
-## 로컬 빌드 & 테스트
-
+## 실행
 ```bash
-# WSL CRLF 이슈 해결
-sed -i 's/\r$//' gradlew
-
-# 유닛테스트 실행
 ./gradlew test
-
-# 애플리케이션 실행 (Ctrl+C로 종료)
-./gradlew run
+./gradlew bootRun
 ```
 
-## Docker 이미지 빌드
+Swagger:
+- `http://localhost:8080/swagger`
 
+## Docker
 ```bash
 docker build -f infra/Dockerfile -t sample-cluster-java:latest .
 ```
 
-## Kubernetes 배포 (Docker Desktop)
-
+## Kubernetes
 ```bash
-# Kafka standalone 1개 먼저 구동
 kubectl apply -f ../../infra/k8s-kafka-standalone.yaml
-kubectl rollout status statefulset/kafka
-
-# 배포
 kubectl apply -f infra/k8s-cluster.yaml
-
-# 상태 확인 (pod-0 → pod-1 순서로 기동)
 kubectl get pods -w
-
-# 로그 확인 ("Member is Up" 로그가 각 노드에서 2개)
 kubectl logs akka-cluster-0
 kubectl logs akka-cluster-1
-# Kafka 1회 실행 확인
-kubectl logs akka-cluster-0 | grep "Kafka stream round-trip"
-kubectl logs akka-cluster-1 | grep "Kafka stream round-trip"
-
-# 정리 (coordinated-shutdown으로 graceful leave)
-kubectl delete -f infra/k8s-cluster.yaml
-kubectl delete -f ../../infra/k8s-kafka-standalone.yaml
 ```
 
-## 환경변수
-
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `CLUSTER_HOSTNAME` | `127.0.0.1` | 노드 바인드 호스트 |
-| `CLUSTER_PORT` | `0` (자동) | 리모팅 포트 |
-| `CLUSTER_SEED_NODES` | `[]` (빈 목록) | seed-nodes 목록 (HOCON 배열 형식) |
-| `CLUSTER_MIN_NR` | `1` | 클러스터 최소 멤버 수 |
-| `KAFKA_BOOTSTRAP_SERVERS` | `kafka.default.svc.cluster.local:9092` | Kafka bootstrap 서버 |
-| `KAFKA_TOPIC` | `cluster-java-events` | Java 프로젝트 전용 토픽 |
-| `KAFKA_GROUP_ID_PREFIX` | `cluster-java-group` | Consumer group prefix |
-| `KAFKA_START_DELAY_SECONDS` | `15` | 클러스터 안정화 후 Kafka 실행 지연 |
-
-## K8s 아키텍처
-
-- **StatefulSet** (`podManagementPolicy: OrderedReady`): pod-0(Seed) 먼저 기동
-- **Headless Service**: `akka-cluster-{ordinal}.akka-cluster.default.svc.cluster.local` DNS
-- **seed-nodes**: pod-0만 seed로 지정, pod-1은 joining
-- **프로토콜**: `akka://ClusterSystem@<podIP>:2551`
+## 주요 환경변수
+- `SERVER_PORT` (default: `8080`)
+- `CLUSTER_HOSTNAME`, `CLUSTER_PORT`, `CLUSTER_MIN_NR`, `CLUSTER_SEED_NODES`
+- `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`, `KAFKA_GROUP_ID_PREFIX`

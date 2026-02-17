@@ -1,6 +1,7 @@
 package cluster.java;
 
 import akka.actor.AbstractActor;
+import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.actor.Props;
 import akka.event.Logging;
@@ -88,12 +89,23 @@ public class KafkaStreamSingletonActor extends AbstractActor {
 
     public static final class Start implements Serializable {
         public static final Start INSTANCE = new Start();
-        private Start() {}
+        private Start() {
+        }
     }
 
     public static final class Stop implements Serializable {
         public static final Stop INSTANCE = new Stop();
-        private Stop() {}
+        private Stop() {
+        }
+    }
+
+    public static final class FireEvent implements Serializable {
+        public static final FireEvent INSTANCE = new FireEvent();
+        private FireEvent() {
+        }
+    }
+
+    public record FireEventResult(boolean success, String produced, String observed, String error) implements Serializable {
     }
 
     private final LoggingAdapter log = Logging.getLogger(getContext().getSystem(), this);
@@ -148,13 +160,14 @@ public class KafkaStreamSingletonActor extends AbstractActor {
                 }
 
                 started = true;
-                executeOnce();
+                runFireEvent(getSelf(), false);
             })
+            .match(FireEvent.class, ignored -> runFireEvent(getSender(), true))
             .match(Stop.class, ignored -> getContext().stop(getSelf()))
             .build();
     }
 
-    private void executeOnce() {
+    private void runFireEvent(ActorRef replyTo, boolean withReply) {
         String payload = "java-cluster-event-" + Instant.now();
 
         log.info(
@@ -166,6 +179,9 @@ public class KafkaStreamSingletonActor extends AbstractActor {
             .whenComplete((value, ex) -> {
                 if (ex != null) {
                     log.error(ex, "Kafka stream round-trip failed. topic={}, payload={}", topic, payload);
+                    if (withReply) {
+                        replyTo.tell(new FireEventResult(false, payload, "", ex.getMessage()), getSelf());
+                    }
                     return;
                 }
 
@@ -174,6 +190,10 @@ public class KafkaStreamSingletonActor extends AbstractActor {
                     topic,
                     payload,
                     value);
+
+                if (withReply) {
+                    replyTo.tell(new FireEventResult(true, payload, value, ""), getSelf());
+                }
             });
     }
 }

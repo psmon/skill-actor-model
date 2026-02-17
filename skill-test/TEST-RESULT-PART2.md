@@ -108,3 +108,37 @@
 - `kubectl delete -f skill-test/projects/sample-cluster-kotlin/infra/k8s-cluster.yaml`
 - `kubectl delete -f skill-test/infra/k8s-kafka-standalone.yaml`
 - 결과: default 네임스페이스 잔여 Pod/StatefulSet 없음 확인
+
+---
+
+## WebApplication 전환 추가 결과 (2026-02-17)
+
+### 적용 요약
+- dotnet/java/kotlin 3종 모두 웹 API 엔드포인트 추가
+- `kafka fire-event`를 스케줄러 방식에서 API 트리거 방식으로 전환
+- Swagger + 파일 기반 로깅 적용
+
+### 추가 테스트
+- Kotlin: `./gradlew test`, `./gradlew bootJar` 성공
+- Java: `./gradlew test`, `./gradlew bootJar` 성공
+- Dotnet: SDK10 컨테이너 기반 `dotnet test ClusterActors.Tests/ClusterActors.Tests.csproj -c Release` 성공 (11/11)
+
+### 비고
+- Dotnet은 Swashbuckle 버전 정렬 및 Ask/Sender 패턴 정리 후 Kubernetes 통합 검증까지 완료
+
+## WebApplication 후속 재검증 (2026-02-17)
+
+### Dotnet 재검증
+- 유닛테스트:
+  - SDK10 컨테이너 기반 실행으로 전환
+  - 결과: **11/11 통과**
+- Kubernetes 통합:
+  - `akkanet-cluster` 2노드 `Member is Up` 확인
+  - `/api/heath`, `/api/actor/hello`, `/api/cluster/info`, `/api/kafka/fire-event`, `/swagger/index.html` 모두 성공
+  - Kafka 발행/수신 round-trip 로그 확인
+
+### Graceful shutdown 재확인 (Kafka 유지)
+- 실행: `kubectl scale statefulset akka-cluster pekko-cluster akkanet-cluster --replicas=0`
+- 결과:
+  - Java/Kotlin/Dotnet 애플리케이션 Pod 모두 종료
+  - Kafka(`kafka-0`)는 계속 Running 유지

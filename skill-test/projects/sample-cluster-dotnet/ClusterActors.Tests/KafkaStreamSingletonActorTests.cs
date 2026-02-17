@@ -55,20 +55,22 @@ public class KafkaStreamSingletonActorTests : TestKit
     }
 
     [Fact]
-    public void ClusterListener_should_trigger_kafka_singleton_once_when_cluster_ready()
+    public void Kafka_fire_event_should_reply_success()
     {
-        var proxyProbe = CreateTestProbe();
+        var runner = new FakeKafkaStreamRunner();
+        var actor = Sys.ActorOf(
+            Props.Create(() => new KafkaStreamSingletonActor(
+                "localhost:9092",
+                "cluster-dotnet-events",
+                "test-group",
+                TimeSpan.FromSeconds(3),
+                runner)));
 
-        Sys.ActorOf(
-            Props.Create(() => new ClusterListenerActor(
-                TestActor,
-                proxyProbe.Ref,
-                1,
-                TimeSpan.Zero)));
+        actor.Tell(new KafkaStreamSingletonActor.FireEvent(), TestActor);
 
-        ExpectMsg("member-up", TimeSpan.FromSeconds(5));
-        proxyProbe.ExpectMsg<KafkaStreamSingletonActor.Start>(TimeSpan.FromSeconds(2));
-        proxyProbe.ExpectNoMsg(TimeSpan.FromMilliseconds(300));
+        var result = ExpectMsg<KafkaStreamSingletonActor.FireEventResult>(TimeSpan.FromSeconds(3));
+        Assert.True(result.Success);
+        Assert.NotNull(result.Observed);
     }
 
     private sealed class FakeKafkaStreamRunner : IKafkaStreamRunner

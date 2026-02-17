@@ -90,3 +90,43 @@
   - `Kafka stream round-trip succeeded` 확인
 - 종료:
   - Kubernetes 리소스 graceful 삭제 후 잔여 리소스 없음 확인
+
+---
+
+## WebApplication 업그레이드 개선 (2026-02-17)
+
+### A. 스킬 참조 기반 적용
+- `dotnet-akka-net`, `dotnet-akka-net-cluster`, `dotnet-akka-net-infra`
+  - ASP.NET Core Web API + Akka DI 브리지(`IHostedService` + `Akka.DependencyInjection`) 적용
+- `java-akka-classic`, `java-akka-classic-cluster`, `java-akka-classic-infra`
+  - Spring Boot MVC + Akka Classic 통합, Spring-Akka Extension 방식 반영
+- `kotlin-pekko-typed`, `kotlin-pekko-typed-cluster`, `kotlin-pekko-typed-infra`
+  - Spring WebFlux + Coroutine + Pekko Typed `AskPattern` 통합 적용
+
+### B. 스킬 외 추가 적용
+- 공통 REST 계약 통일:
+  - `/api/heath`, `/api/actor/hello`, `/api/cluster/info`, `/api/kafka/fire-event`
+- Kafka 트리거 전환:
+  - 클러스터 준비 후 지연 스케줄 방식 제거
+  - API 호출 시 단발 실행 방식으로 변경
+- 인프라 헬스체크 정렬:
+  - K8s readiness를 remoting TCP에서 HTTP(`/api/heath`) 기준으로 전환
+
+### C. 검증 결과 요약
+- Java/Kotlin: 테스트 및 bootJar 성공
+- Dotnet: SDK10 컨테이너 기반 테스트 11/11 성공, Kubernetes API/클러스터/Kafka 검증 완료
+
+### D. WebApplication 후속 안정화 (Dotnet, 2026-02-17)
+- Swashbuckle 런타임 충돌 해결:
+  - 문제: `Swashbuckle.AspNetCore 7.0.0` + `.NET 10`에서 `TypeLoadException`
+  - 조치: `Swashbuckle.AspNetCore 10.0.0`으로 상향
+- Akka Ask 통신 방식 정렬:
+  - `replyTo` 메시지 계약에서 `Sender` 기반 응답으로 단순화
+  - Minimal API `Ask(object, timeout)` 패턴으로 일관화
+- Kubernetes 클러스터 주소 안정화:
+  - 문제: appsettings 기본값 우선으로 ENV가 무시되어 `127.0.0.1` 바인딩
+  - 조치: `ENV > POD_NAME 기반 DNS > appsettings` 우선순위로 수정
+  - 결과: 2노드 정상 조인 및 `cluster info` API 정상 응답
+- 검증 결과:
+  - .NET10 SDK 컨테이너 기준 테스트 11/11 성공
+  - `/api/*` + Swagger + Kafka round-trip + Member Up 로그까지 모두 확인

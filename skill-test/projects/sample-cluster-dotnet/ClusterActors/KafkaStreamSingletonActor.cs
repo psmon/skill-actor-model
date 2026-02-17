@@ -75,6 +75,8 @@ public class KafkaStreamSingletonActor : ReceiveActor
 {
     public sealed record Start;
     public sealed record Stop;
+    public sealed record FireEvent;
+    public sealed record FireEventResult(bool Success, string Produced, string? Observed, string? Error);
 
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IKafkaStreamRunner _runner;
@@ -97,7 +99,7 @@ public class KafkaStreamSingletonActor : ReceiveActor
         _timeout = timeout;
         _runner = runner ?? new AkkaStreamsKafkaRunner(Context.System, Context.Materializer());
 
-        Receive<Start>(start =>
+        Receive<Start>(_msg =>
         {
             if (_started)
             {
@@ -106,13 +108,20 @@ public class KafkaStreamSingletonActor : ReceiveActor
             }
 
             _started = true;
-            var ignoredTask = ExecuteOnceAsync();
+            _ = ExecuteOnceAsync();
+        });
+
+        ReceiveAsync<FireEvent>(async _ =>
+        {
+            var replyTo = Sender;
+            var result = await ExecuteOnceAsync();
+            replyTo.Tell(result);
         });
 
         Receive<Stop>(_ => Context.Stop(Self));
     }
 
-    private async Task ExecuteOnceAsync()
+    private async Task<FireEventResult> ExecuteOnceAsync()
     {
         var payload = $"dotnet-cluster-event-{DateTimeOffset.UtcNow:O}";
 
@@ -135,10 +144,13 @@ public class KafkaStreamSingletonActor : ReceiveActor
                 _topic,
                 payload,
                 observed);
+
+            return new FireEventResult(true, payload, observed, null);
         }
         catch (Exception ex)
         {
             _log.Error(ex, "Kafka stream round-trip failed. topic={0}, payload={1}", _topic, payload);
+            return new FireEventResult(false, payload, null, ex.Message);
         }
     }
 }

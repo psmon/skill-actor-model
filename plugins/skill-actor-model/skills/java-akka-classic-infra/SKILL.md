@@ -587,3 +587,27 @@ spec:
 14. **아티팩트 GroupId**를 구분합니다: Management는 `com.lightbend.akka.management`, Discovery는 `com.lightbend.akka.discovery`.
 
 $ARGUMENTS
+
+## WebApplication 통합 업데이트 (2026-02-17)
+
+- 콘솔 엔트리 중심 샘플을 웹 API 중심으로 확장할 때 아래 기본 API를 우선 제공합니다.
+  - `GET /api/heath`
+  - `GET /api/actor/hello`
+  - `GET /api/cluster/info`
+  - `POST /api/kafka/fire-event`
+- Kafka 실행은 스케줄러 자동 실행보다 API 트리거 방식을 우선합니다.
+- Swagger/OpenAPI와 파일 기반 로깅 구성을 기본 포함합니다.
+- 플랫폼별 권장 웹 모드:
+  - .NET: ASP.NET Core (.NET 10)
+  - Java: Spring Boot MVC (Java 21, Spring Boot 3.5.x)
+  - Kotlin: Spring WebFlux + Coroutine (Spring Boot 3.5.x)
+
+## Web + Infra 보강 지침 (2026-02)
+
+1. readiness/liveness는 remoting 포트 대신 HTTP `/api/heath`를 기준으로 설정합니다.
+2. 로컬 Kubernetes에서는 `imagePullPolicy: Never`와 고유 태그를 사용해 이미지 캐시 오염을 피합니다.
+3. `$(POD_NAME)` 문자열 확장에 의존하지 말고, 런타임에서 `POD_NAME + SERVICE_NAME`로 hostname을 조합합니다.
+4. ENV 우선순위는 `ENV > 계산값(POD DNS/IP) > 설정파일`로 통일합니다.
+5. seed-node, management, bootstrap 포트 정의를 서비스/컨테이너/설정 간 동일하게 유지합니다.
+6. 배포 후 `rollout status`만 보지 말고, 로그에서 `Member is Up`와 singleton 동작까지 확인합니다.
+7. Kafka 연동 검증은 API 호출 후 producer/consumer 성공 로그를 함께 수집합니다.

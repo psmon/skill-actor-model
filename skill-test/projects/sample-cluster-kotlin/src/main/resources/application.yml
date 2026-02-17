@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: sample-cluster-kotlin
+
+server:
+  port: ${SERVER_PORT:8080}
+
+springdoc:
+  swagger-ui:
+    path: /swagger

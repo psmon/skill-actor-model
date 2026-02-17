@@ -15,9 +15,24 @@ Kotlin + Pekko Typed로 AI 에이전트 파이프라인(LLM 연동)을 타입 �
 
 ## 환경
 
-- **프레임워크**: Apache Pekko Typed 1.1.x
+- **프레임워크**: Apache Pekko Typed 1.4.x
 - **언어**: Kotlin
 - **형태**: 콘솔/서버 모두 가능
+
+## 코어 스킬 조합 방식 (최신)
+
+AI-agent-kotlin 스킬은 아래 순서로 코어 스킬과 조합합니다.
+
+1. `kotlin-pekko-typed`로 sealed message/Behavior 전환/ask 규약을 먼저 확정합니다.
+2. 분산이 필요하면 `kotlin-pekko-typed-cluster`로 singleton/receptionist/pubsub 경계를 분리합니다.
+3. 배포가 필요하면 `kotlin-pekko-typed-infra` 규칙(bootstrap/readiness/pod DNS)을 선반영합니다.
+4. 이후 본 스킬(`actor-ai-agent-kotlin`)로 오케스트레이터 파이프라인을 올립니다.
+
+조합 시 고정 원칙:
+- 오케스트레이터는 상태 전환(Behavior)과 컨텍스트 캡처만 담당합니다.
+- 단계 액터는 analyze/search/decision 단일 책임으로 분리합니다.
+- 외부 비동기 호출은 `pipeToSelf`로 내부 명령으로 환원합니다.
+- 하위 응답은 `messageAdapter`로 오케스트레이터 내부 명령으로 브리지합니다.
 
 ## 핵심 패턴
 

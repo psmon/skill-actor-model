@@ -224,3 +224,23 @@ skill-actor-model/
 | KotlinBootReactiveLabs | Kotlin + Pekko Typed | [kopring-reactive-labs](https://github.com/psmon/kopring-reactive-labs/tree/main/KotlinBootReactiveLabs) |
 | NetCoreLabs | C# + Akka.NET | [NetCoreLabs](https://github.com/psmon/NetCoreLabs) |
 | memorizer-v1 | C# + Akka.NET + AI | [memorizer-v1](https://github.com/psmon/memorizer-v1) |
+
+## 웹 애플리케이션 샘플 (Part2)
+
+`skill-test/projects` 하위 3개 샘플은 콘솔 모드에서 웹 API 모드로 확장되었습니다.
+이 활동으로 인해 스킬도 다음기준 최신언어와 플랫폼버전을 고려해 코드생성을 각각 지원합니다.
+
+- `sample-cluster-dotnet`: ASP.NET Core(.NET 10) + Akka.NET
+- `sample-cluster-java`: Spring Boot 3.5.x MVC + Java 21 + Akka Classic
+- `sample-cluster-kotlin`: Spring Boot 3.5.x WebFlux + Kotlin Coroutine + Pekko Typed
+
+공통 API:
+- `GET /api/heath`
+- `GET /api/actor/hello`
+- `GET /api/cluster/info`
+- `POST /api/kafka/fire-event`
+
+결과 문서:
+- `skill-test/TEST-RESULT-WebApplication.md`
+- `skill-test/TEST-RESULT-PART2.md`
+- `skill-test/TEST-RESULT-PART2-Improve.md`

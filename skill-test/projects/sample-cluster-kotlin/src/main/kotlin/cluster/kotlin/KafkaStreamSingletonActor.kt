@@ -6,6 +6,7 @@ import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.kafka.common.serialization.StringSerializer
 import org.apache.pekko.Done
+import org.apache.pekko.actor.typed.ActorRef
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.actor.typed.javadsl.AbstractBehavior
@@ -29,8 +30,18 @@ import java.util.concurrent.TimeUnit
 sealed class KafkaSingletonCommand
 object StartKafkaStream : KafkaSingletonCommand()
 object StopKafkaStream : KafkaSingletonCommand()
-data class KafkaRunCompleted(val observed: String) : KafkaSingletonCommand()
-data class KafkaRunFailed(val reason: String) : KafkaSingletonCommand()
+data class FireKafkaEvent(val replyTo: ActorRef<KafkaFireEventResult>) : KafkaSingletonCommand()
+data class KafkaRunCompleted(
+    val produced: String,
+    val observed: String,
+    val replyTo: ActorRef<KafkaFireEventResult>?
+) : KafkaSingletonCommand()
+data class KafkaRunFailed(
+    val produced: String,
+    val reason: String,
+    val replyTo: ActorRef<KafkaFireEventResult>?
+) : KafkaSingletonCommand()
+data class KafkaFireEventResult(val success: Boolean, val produced: String, val observed: String, val error: String)
 
 interface KafkaStreamRunner {
     fun runOnce(
@@ -122,7 +133,11 @@ class KafkaStreamSingletonActor private constructor(
                 }
 
                 started = true
-                executeOnce()
+                executeOnce(null)
+                Behaviors.same()
+            }
+            .onMessage(FireKafkaEvent::class.java) { msg ->
+                executeOnce(msg.replyTo)
                 Behaviors.same()
             }
             .onMessage(StopKafkaStream::class.java) {
@@ -134,6 +149,7 @@ class KafkaStreamSingletonActor private constructor(
                     topic,
                     msg.observed
                 )
+                msg.replyTo?.tell(KafkaFireEventResult(true, msg.produced, msg.observed, ""))
                 Behaviors.same()
             }
             .onMessage(KafkaRunFailed::class.java) { msg ->
@@ -142,12 +158,13 @@ class KafkaStreamSingletonActor private constructor(
                     topic,
                     msg.reason
                 )
+                msg.replyTo?.tell(KafkaFireEventResult(false, msg.produced, "", msg.reason))
                 Behaviors.same()
             }
             .build()
     }
 
-    private fun executeOnce() {
+    private fun executeOnce(replyTo: ActorRef<KafkaFireEventResult>?) {
         val payload = "kotlin-cluster-event-${Instant.now()}"
 
         context.log.info(
@@ -158,9 +175,9 @@ class KafkaStreamSingletonActor private constructor(
 
         context.pipeToSelf(runner.runOnce(bootstrapServers, topic, groupIdPrefix, payload, timeout)) { observed, ex ->
             if (ex != null) {
-                KafkaRunFailed(ex.message ?: "unknown")
+                KafkaRunFailed(payload, ex.message ?: "unknown", replyTo)
             } else {
-                KafkaRunCompleted("$payload -> $observed")
+                KafkaRunCompleted(payload, observed, replyTo)
             }
         }
     }

@@ -15,9 +15,24 @@ Java + Akka Classic으로 AI 에이전트 파이프라인(LLM 연동)을 액터 
 
 ## 환경
 
-- **프레임워크**: Akka Classic 2.7.x
-- **언어**: Java 17+
+- **프레임워크**: Akka Classic 2.7.x (Spring Boot 3.5.x + Java 21 기준 병행)
+- **언어**: Java 21
 - **형태**: 콘솔/서버 모두 가능
+
+## 코어 스킬 조합 방식 (최신)
+
+AI-agent-java 스킬은 아래 순서로 코어 스킬과 조합합니다.
+
+1. `java-akka-classic`으로 메시지 불변성/Props/createReceive 기본 규약을 먼저 확정합니다.
+2. 분산이 필요하면 `java-akka-classic-cluster`로 singleton/pubsub/sharding 경계를 나눕니다.
+3. 배포까지 포함하면 `java-akka-classic-infra` 규칙(seed/bootstrap/readiness/log)을 선적용합니다.
+4. 이후 본 스킬(`actor-ai-agent-java`)로 오케스트레이터 단계를 올립니다.
+
+조합 시 고정 원칙:
+- 오케스트레이터는 상태 전환(become/unbecome)만 담당합니다.
+- 단계 액터(분석/검색/평가)는 단일 책임으로 분리합니다.
+- 외부 비동기 결과는 Future -> actor message로 환원합니다.
+- 사용자 응답 경로와 사이드태스크 경로를 분리합니다.
 
 ## 핵심 패턴
 

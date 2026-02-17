@@ -842,3 +842,25 @@ seedMediator.tell(
 13. **크로스노드 PubSub**은 발행 노드의 mediator를 사전 초기화하고, 구독 전파 대기(3~5초) 후 발행합니다.
 
 $ARGUMENTS
+
+## WebApplication 통합 업데이트 (2026-02-17)
+
+- 콘솔 엔트리 중심 샘플을 웹 API 중심으로 확장할 때 아래 기본 API를 우선 제공합니다.
+  - `GET /api/heath`
+  - `GET /api/actor/hello`
+  - `GET /api/cluster/info`
+  - `POST /api/kafka/fire-event`
+- Kafka 실행은 스케줄러 자동 실행보다 API 트리거 방식을 우선합니다.
+- Swagger/OpenAPI와 파일 기반 로깅 구성을 기본 포함합니다.
+- 플랫폼별 권장 웹 모드:
+  - .NET: ASP.NET Core (.NET 10)
+  - Java: Spring Boot MVC (Java 21, Spring Boot 3.5.x)
+  - Kotlin: Spring WebFlux + Coroutine (Spring Boot 3.5.x)
+
+## Web 클러스터 연동 주의사항 (2026-02)
+
+1. cluster join 완료 전에 `/api/cluster/info`가 빈 값일 수 있으므로, readiness 이후 검증합니다.
+2. singleton actor 경로(manager/proxy)와 API 호출 대상(proxy)을 일치시킵니다.
+3. 클러스터 멤버 조건(min members)과 readiness 조건을 동일한 기준으로 맞춥니다.
+4. seed-node 주소는 pod DNS 기준으로 고정하고, 런타임에서 hostname 우선순위를 명시합니다.
+5. 클러스터 이벤트 로그(`Member is Up`)를 API 테스트 결과와 함께 검증합니다.
