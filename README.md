@@ -2,7 +2,9 @@
 
 Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어에서 학습**할 수 있는 스킬셋입니다.
 
-동일한 동시성 패턴(Tell, Ask, Router, Supervision, Timer, Batch, Stream, Cluster, Infrastructure 등)이 Java, Kotlin, C# 세 플랫폼에서 어떻게 구현되는지 비교하며 학습할 수 있도록 설계되었습니다.
+언어및 프렘임워크가 지원하는 비동기 동시성 프로그래밍을 활용하고, 다양한 액터 패턴들을(Tell, Ask, Router, Supervision, Timer, Batch, Stream, Cluster, Infrastructure 등) 함께이용해
+
+Java, Kotlin, C# 3진영에서 분산처리 프로그래밍을 스킬을 통한 바이브 코드생성 지원을 위한 스킬관리 저장소입니다.
 
 ## 스킬 목록
 
@@ -23,38 +25,6 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 | AI Agent Pipeline (.NET) | `/actor-ai-agent` | C# + Akka.NET + LLM |
 | AI Agent Pipeline (Java) | `/actor-ai-agent-java` | Java + Akka Classic + LLM |
 | AI Agent Pipeline (Kotlin) | `/actor-ai-agent-kotlin` | Kotlin + Pekko Typed + LLM |
-
-
-### 버전채택 
-- Akka 2.7을 채택한 이유는 Akka의 본방이 BSD로전환후 기간이 지난 버전(약2~3년)  오픈소스로 점진전환 , 구현시점 2.7의 전환시점이 곧 다가와 채택 
-- Open으로 전환한다는 의미가 사용은 가능하나 그동안 발생한 보안취약점 패치등을 지원한다는 내용은아니며, Pekko를 이용해야 보안패치를 등을 Fork이후 추가지원하기때문에 오픈소스 사용인경우 Pekko채택 권장
-- Pekko 의 경우 2.6x 기반 1.1.0에서 어느정도 안정 버전을 갖추어 채택 - 
-- 오픈소스는 버전체크 부지런해야 활용가능한것같으며 스킬에 이용되는 기반버전도 함께 올릴예정
-
-| Akka  | Pekko  | Akka.NET |
-|-------|--------|----------|
-| 2.5.x | -      | 1.5.x    |
-| 2.6.x | 1.0.x~ | -        |
-| 2.7.x | 1.4.x~ | -        |
-
-#### TypedActor의 특징
-- Typed Actor는 2.6에 출시 Pekko-Kotlin 버전으로 다루는중 - 이벤트 발신/수신자 약손된 Type이 안맞는경우 컴파일타임에 오류를냄, 클래식에 익숙하다고 하면 Typed준수하느라 약간의 스트레스 알고보니 Behavior패턴의 일종으로 이 패턴에 익숙해야 강력해짐
-- Classic Actor(Untyped Actor) 이용시에는 이벤트 전송 Type이 자유로운 장점이 있지만 단점이 될수 있기때문에 설계시 메시지 프로토콜을 더 명확히 정의하는것이 중요
-- Akka.net 은 Untyped Actor가 주류, Typed Actor는 미지원인것으로 파악됨
-
-링크 : https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.3.html
-
-#### 액터프레임워크 정보
-
-아파치 Flink에서(Spark보다 조금더 대세 스트리밍 툴) Akka를 Pekko로전환, AWS에도 주력으로 밀고있는 클라우드 제품이여서 오픈소스인 Pekko채택및 전환
-- https://docs.aws.amazon.com/ko_kr/managed-flink/latest/java/flink-1-18.html : AWS의 Pekko 전환 주요뉴스
-- https://issues.apache.org/jira/browse/FLINK-32468 : 아파치 Fling에서 Akka에서 Pekko로 전환
-- https://akka.io/technical-support-for-apache-pekko  : Akka본방에서 Pekko지원을 약속
-
-닷넷진영은 Akka의 본방을 계승 포팅을해 오픈소스로 성공적 활동중
-- https://petabridge.com/bootcamp/ : akka.net 을 딜리버리및 지원하는 Petabridge의 공식홈
-- https://petabridge.com/blog/  : 개인적으로 이벤트드리븐,분산처리 닷넷관련 고급 기술테크들을 빠르게 다루는듯 -MsLearn보다 여기서 닷넷구현 패턴들을 주로 학습 
-- https://learn.microsoft.com/en-us/dotnet/orleans/overview?pivots=orleans-10-0 - MS에도 액터시스템 본방이 있지만, MS플랫폼내에서만 주로사용되는듯(게임포함 Azure 클라우드 엣지전반적으로 액터시스템사용)
 
 
 ## 설치 방법
@@ -90,20 +60,52 @@ Claude Code에서 아래 명령어를 순서대로 실행합니다.
 }
 ```
 
-
 설치 후 `/java-akka-classic`, `/kotlin-pekko-typed`, `/dotnet-akka-net`, `/java-akka-classic-test`, `/kotlin-pekko-typed-test`, `/dotnet-akka-net-test`, `/java-akka-classic-cluster`, `/kotlin-pekko-typed-cluster`, `/dotnet-akka-net-cluster`, `/java-akka-classic-infra`, `/kotlin-pekko-typed-infra`, `/dotnet-akka-net-infra`, `/actor-ai-agent`, `/actor-ai-agent-java`, `/actor-ai-agent-kotlin` 명령어를 사용할 수 있습니다.
 
-> 플러그인을 최신 버전으로 업데이트하려면: `/plugin marketplace update`
+> 플러그인을 최신 버전으로 업데이트하려면: `/plugin marketplace update` -> Update marketplace
 
 ### 방법 2: Git 저장소 클론 (로컬 개발용)
 
-저장소를 클론하면 `.claude/skills/` 디렉토리의 스킬이 자동으로 인식됩니다.
+저장소를 클론하면 `.claude/skills/` 디렉토리내에서 스킬이 자동으로 인식되어 테스트및 활용가능
 
 ```bash
 git clone https://github.com/psmon/skill-actor-model.git
 cd skill-actor-model
 claude   # 스킬이 자동 로드됩니다
 ```
+
+### Codex 용
+```
+git clone https://github.com/psmon/skill-actor-model.git
+
+다음은 클코드 스킬 오리지널 위치 : plugins/skill-actor-model
+
+Codex용으로 기존 스킬원본은 유지하고, 내 개인전용(로컬)으로 복사생성해죠
+
+완료후 Codex재시작
+```
+
+## 스킬 테스트
+
+스킬이 코드를 올바르게 생성하고 실행하는지 검증하기 위한 셀프 테스트 프롬프트를 제공합니다.
+
+스킬설치후 심플한 액터모델을, 지원하는 언어스킬을 불러낸후 간단하게 수행해볼수 있습니다.
+
+```
+/kotlin-pekko-typed skill-test/projects/sample1 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
+```
+
+```
+/java-akka-classic skill-test/projects/sample2 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
+```
+
+```
+/dotnet-akka-net skill-test/projects/sample3 하위폴터에 hello world 액터코드 작성, 콘솔프로젝트로 수행
+```
+액터모델 작성경험이 없어도, 각 플랫폼(Java, Kotlin, C#)별로 다양한 액터모델 고급패턴을 스킬이용 구현할수 있습니다. - 지속업데이트
+
+-> [스킬 테스트 프롬프트 바로가기](skill-test/TEST.md)
+
 
 ## 사용 방법
 
@@ -144,6 +146,12 @@ Claude Code에서 슬래시 명령어로 원하는 플랫폼의 액터 패턴 �
 ```
 
 자연어로 질문해도 관련 스킬이 자동 활성화됩니다.
+
+ex>
+- java-akka-classic 스킬이용해 RoundRobinPool 라우터로 5개 워커에 메시지 분배를 만들고 콘솔모드로만 작동
+- java-akka-classic 스킬이용해 RoundRobinPool 라우터로 5개 워커에 메시지 분배를 만들어, SpringBoot 모드로 어플리케이션 작동
+- java-akka-classic,java-akka-classic-infra 스킬이용해 RoundRobinPool 라우터로 5개 워커에 메시지 분배를 만들고 1개의 노드로만 로컬쿠버 배포
+- java-akka-classic,java-akka-classic-test,java-akka-classic-infra 스킬이용해 RoundRobinPool 라우터로 5개 워커에 메시지 분배를 만들고 1개의 노드로만 로컬쿠버 배포, 배포전 유닛테스트를 만들고 검증한후 진행할것
 
 ## 프로젝트 구조
 
@@ -205,13 +213,6 @@ skill-actor-model/
 | SSE / WebSocket | - | O | O | O |
 | AI Pipeline | - | - | - | O |
 
-## 스킬 테스트
-
-스킬이 코드를 올바르게 생성하고 실행하는지 검증하기 위한 셀프 테스트 프롬프트를 제공합니다. 
-
-액터모델 작성경험이 없어도, 각 플랫폼(Java, Kotlin, C#)별로 다양한 액터모델 고급패턴을 스킬이용 구현할수 있습니다. - 지속업데이트
-
--> [스킬 테스트 프롬프트 바로가기](skill-test/TEST.md)
 
 ## 참고 프로젝트
 
@@ -225,22 +226,39 @@ skill-actor-model/
 | NetCoreLabs | C# + Akka.NET | [NetCoreLabs](https://github.com/psmon/NetCoreLabs) |
 | memorizer-v1 | C# + Akka.NET + AI | [memorizer-v1](https://github.com/psmon/memorizer-v1) |
 
-## 웹 애플리케이션 샘플 (Part2)
+### 버전채택
+- Akka 2.7을 채택한 이유는 Akka의 본방이 BSD로전환후 기간이 지난 버전(약2~3년)  오픈소스로 점진전환 , 구현시점 2.7의 전환시점이 곧 다가와 채택
+- Open으로 전환한다는 의미가 사용은 가능하나 그동안 발생한 보안취약점 패치등을 지원한다는 내용은아니며, Pekko를 이용해야 보안패치를 등을 Fork이후 추가지원하기때문에 오픈소스 사용인경우 Pekko채택 권장
+- Pekko 의 경우 2.6x 기반 1.1.0에서 어느정도 안정 버전을 갖추어 채택 -
+- 오픈소스는 버전체크 부지런해야 활용가능한것같으며 스킬에 이용되는 기반버전도 함께 올릴예정
 
-`skill-test/projects` 하위 3개 샘플은 콘솔 모드에서 웹 API 모드로 확장되었습니다.
-이 활동으로 인해 스킬도 다음기준 최신언어와 플랫폼버전을 고려해 코드생성을 각각 지원합니다.
+| Akka  | Pekko  | Akka.NET |
+|-------|--------|----------|
+| 2.5.x | -      | 1.5.x    |
+| 2.6.x | 1.0.x~ | -        |
+| 2.7.x | 1.4.x~ | -        |
 
-- `sample-cluster-dotnet`: ASP.NET Core(.NET 10) + Akka.NET
-- `sample-cluster-java`: Spring Boot 3.5.x MVC + Java 21 + Akka Classic
-- `sample-cluster-kotlin`: Spring Boot 3.5.x WebFlux + Kotlin Coroutine + Pekko Typed
+스킬지원 언어및 웹프레임워크 지원버전
+- ASP.NET Core(.NET 10) + Akka.NET
+- Spring Boot 3.5.x MVC + Java 21 + Akka Classic : JAVA에서는 MVC모드와 Classic Untyped Actor 버전
+- Spring Boot 3.5.x WebFlux + Kotlin Coroutine + Pekko Typed : Kotlin에서는 리액티브버전과 Typed Actor 버전
 
-공통 API:
-- `GET /api/heath`
-- `GET /api/actor/hello`
-- `GET /api/cluster/info`
-- `POST /api/kafka/fire-event`
 
-결과 문서:
-- `skill-test/TEST-RESULT-WebApplication.md`
-- `skill-test/TEST-RESULT-PART2.md`
-- `skill-test/TEST-RESULT-PART2-Improve.md`
+#### TypedActor의 특징
+- Typed Actor는 2.6에 출시 Pekko-Kotlin 버전으로 다루는중 - 이벤트 발신/수신자 약손된 Type이 안맞는경우 컴파일타임에 오류를냄, 클래식에 익숙하다고 하면 Typed준수하느라 약간의 스트레스 알고보니 Behavior패턴의 일종으로 이 패턴에 익숙해야 강력해짐
+- Classic Actor(Untyped Actor) 이용시에는 이벤트 전송 Type이 자유로운 장점이 있지만 단점이 될수 있기때문에 설계시 메시지 프로토콜을 더 명확히 정의하는것이 중요
+- Akka.net 은 Untyped Actor가 주류, Typed Actor는 미지원인것으로 파악됨
+
+링크 : https://pekko.apache.org/docs/pekko/current/release-notes/releases-1.3.html
+
+#### 액터프레임워크 정보
+
+아파치 Flink에서(Spark보다 조금더 대세 스트리밍 툴) Akka를 Pekko로전환, AWS에도 주력으로 밀고있는 클라우드 제품이여서 오픈소스인 Pekko채택및 전환
+- https://docs.aws.amazon.com/ko_kr/managed-flink/latest/java/flink-1-18.html : AWS의 Pekko 전환 주요뉴스
+- https://issues.apache.org/jira/browse/FLINK-32468 : 아파치 Fling에서 Akka에서 Pekko로 전환
+- https://akka.io/technical-support-for-apache-pekko  : Akka본방에서 Pekko지원을 약속
+
+닷넷진영은 Akka의 본방을 계승 포팅을해 오픈소스로 성공적 활동중
+- https://petabridge.com/bootcamp/ : akka.net 을 딜리버리및 지원하는 Petabridge의 공식홈
+- https://petabridge.com/blog/  : 개인적으로 이벤트드리븐,분산처리 닷넷관련 고급 기술테크들을 빠르게 다루는듯 -MsLearn보다 여기서 닷넷구현 패턴들을 주로 학습
+- https://learn.microsoft.com/en-us/dotnet/orleans/overview?pivots=orleans-10-0 - MS에도 액터시스템 본방이 있지만, MS플랫폼내에서만 주로사용되는듯(게임포함 Azure 클라우드 엣지전반적으로 액터시스템사용)
