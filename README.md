@@ -1,5 +1,7 @@
 # skill-actor-model
 
+![Skill Actor Model](intro.png)
+
 Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어에서 학습**할 수 있는 스킬셋입니다.
 
 언어및 프렘임워크가 지원하는 비동기 동시성 프로그래밍을 활용하고, 다양한 액터 패턴들을(Tell, Ask, Router, Supervision, Timer, Batch, Stream, Cluster, Infrastructure 등) 함께이용해
