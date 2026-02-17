@@ -1,12 +1,18 @@
 # sample-cluster-kotlin — Kotlin Pekko Typed Cluster
 
-Kotlin + Apache Pekko Typed 1.1.3 기반 클러스터 프로젝트.
+Kotlin + Apache Pekko Typed 1.4.0 기반 클러스터 프로젝트.
+
+## 1.1.x -> 1.4.x 변경 요약
+- Pekko Core/Cluster/Stream/TestKit `1.4.0` 적용
+- Pekko Management + Cluster Bootstrap + Kubernetes API Discovery 적용
+- K8s RBAC(ServiceAccount/Role/RoleBinding) 추가
+- Bootstrap contact-point 포트(`management:8558`) 및 Pod IP 기반 Management hostname 적용
 
 ## 구조
 
 ```
 src/main/kotlin/cluster/kotlin/
-├── Main.kt                    # 엔트리포인트 (ActorSystem + whenTerminated 블로킹)
+├── Main.kt                    # 엔트리포인트 (Pekko Management + Cluster Bootstrap 시작)
 ├── ClusterListenerActor.kt    # 클러스터 MemberUp 이벤트 리스너
 ├── CounterSingletonActor.kt   # Singleton 카운터 액터
 ├── KafkaStreamSingletonActor.kt # Pekko Kafka Streams 1회 실행 싱글톤
@@ -21,7 +27,7 @@ src/test/kotlin/cluster/kotlin/
 
 infra/
 ├── Dockerfile                 # 멀티스테이지 빌드 (gradle → temurin JRE)
-└── k8s-cluster.yaml           # Headless Service + StatefulSet (2 replicas)
+└── k8s-cluster.yaml           # Headless Service + StatefulSet + RBAC (2 replicas)
 ```
 
 ## 로컬 빌드 & 테스트
@@ -59,6 +65,9 @@ kubectl get pods -w
 # 로그 확인 ("Member is Up" 로그가 각 노드에서 2개)
 kubectl logs pekko-cluster-0
 kubectl logs pekko-cluster-1
+# Bootstrap/Management 확인
+kubectl logs pekko-cluster-0 | grep "Bootstrap"
+kubectl logs pekko-cluster-1 | grep "Bootstrap"
 # Kafka 1회 실행 확인
 kubectl logs pekko-cluster-0 | grep "Kafka stream round-trip"
 kubectl logs pekko-cluster-1 | grep "Kafka stream round-trip"
@@ -74,8 +83,10 @@ kubectl delete -f ../../infra/k8s-kafka-standalone.yaml
 |------|--------|------|
 | `CLUSTER_HOSTNAME` | `127.0.0.1` | 노드 바인드 호스트 |
 | `CLUSTER_PORT` | `0` (자동) | 리모팅 포트 |
-| `CLUSTER_SEED_NODES` | `[]` (빈 목록) | seed-nodes 목록 (HOCON 배열 형식) |
+| `CLUSTER_SEED_NODES` | 미설정 | 로컬 fallback seed-nodes (Bootstrap과 혼용 금지) |
 | `CLUSTER_MIN_NR` | `1` | 클러스터 최소 멤버 수 |
+| `CLUSTER_BOOTSTRAP_SERVICE_NAME` | `pekko-cluster` | Bootstrap 대상 서비스명 |
+| `CLUSTER_BOOTSTRAP_REQUIRED_CONTACT_POINTS` | `2` | Bootstrap 최소 contact-point |
 | `KAFKA_BOOTSTRAP_SERVERS` | `kafka.default.svc.cluster.local:9092` | Kafka bootstrap 서버 |
 | `KAFKA_TOPIC` | `cluster-kotlin-events` | Kotlin 프로젝트 전용 토픽 |
 | `KAFKA_GROUP_ID_PREFIX` | `cluster-kotlin-group` | Consumer group prefix |
@@ -85,5 +96,6 @@ kubectl delete -f ../../infra/k8s-kafka-standalone.yaml
 
 - **StatefulSet** (`podManagementPolicy: OrderedReady`): pod-0(Seed) 먼저 기동
 - **Headless Service**: `pekko-cluster-{ordinal}.pekko-cluster.default.svc.cluster.local` DNS
-- **seed-nodes**: pod-0만 seed로 지정, pod-1은 joining
+- **Discovery**: Kubernetes API + Pekko Cluster Bootstrap
+- **RBAC**: ServiceAccount/Role/RoleBinding으로 pod list/watch/get 허용
 - **프로토콜**: `pekko://ClusterSystem@<podIP>:25520`

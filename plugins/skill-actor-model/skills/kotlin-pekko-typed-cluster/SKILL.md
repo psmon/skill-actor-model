@@ -6,7 +6,7 @@ argument-hint: "[클러스터패턴] [요구사항]"
 
 # Kotlin + Pekko Typed 클러스터 스킬
 
-Kotlin + Apache Pekko Typed(1.1.x) 기반의 타입 안전한 클러스터 코드를 생성하는 스킬입니다.
+Kotlin + Apache Pekko Typed(1.4.x) 기반의 타입 안전한 클러스터 코드를 생성하는 스킬입니다.
 
 ## 참고 문서
 
@@ -16,7 +16,7 @@ Kotlin + Apache Pekko Typed(1.1.x) 기반의 타입 안전한 클러스터 코�
 
 ## 호환 버전
 
-- **프레임워크**: Apache Pekko 1.1.x (기본 스킬과 동일)
+- **프레임워크**: Apache Pekko 1.4.x (기본 스킬과 동일)
 - **언어**: Kotlin 1.9.x
 - **빌드**: Gradle (Kotlin DSL)
 - **라이선스**: Apache License 2.0
@@ -26,10 +26,16 @@ Kotlin + Apache Pekko Typed(1.1.x) 기반의 타입 안전한 클러스터 코�
 - **HOCON 네임스페이스**: `pekko { }` (NOT `akka { }`)
 - **프로토콜**: `pekko://`
 
+## Kubernetes 운영 권장
+
+- Kubernetes 환경에서 1.1.x -> 1.4.x 마이그레이션 시에는 **고정 `seed-nodes`보다 `kubernetes-api` discovery + cluster bootstrap 조합을 우선**합니다.
+- `MemberUp`/`ClusterListener` 로직은 그대로 유지하면서, 조인 방식만 bootstrap으로 전환하면 코드 영향은 작고 운영 안정성은 크게 향상됩니다.
+- 인프라 설정 상세는 `kotlin-pekko-typed-infra` 스킬의 마이그레이션 체크리스트를 따릅니다.
+
 ### Gradle 의존성 (Kotlin DSL)
 
 ```kotlin
-val pekkoVersion = "1.1.3"
+val pekkoVersion = "1.4.0"
 val scalaBinaryVersion = "2.13"
 
 dependencies {

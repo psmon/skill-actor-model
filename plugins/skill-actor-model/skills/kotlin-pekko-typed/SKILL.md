@@ -6,7 +6,7 @@ argument-hint: "[패턴명] [요구사항]"
 
 # Kotlin + Pekko Typed 액터 모델 스킬
 
-Kotlin + Apache Pekko Typed(1.1.x) 기반의 타입 안전한 액터 모델 코드를 생성하는 스킬입니다.
+Kotlin + Apache Pekko Typed(1.4.x) 기반의 타입 안전한 액터 모델 코드를 생성하는 스킬입니다.
 
 ## 참고 문서
 
@@ -16,12 +16,18 @@ Kotlin + Apache Pekko Typed(1.1.x) 기반의 타입 안전한 액터 모델 코�
 
 ## 환경
 
-- **프레임워크**: Apache Pekko 1.1.x (Akka 2.6.x 오픈소스 포크)
+- **프레임워크**: Apache Pekko 1.4.x (Akka 2.7.x 오픈소스 포크)
 - **언어**: Kotlin
 - **빌드**: Gradle (Kotlin DSL)
 - **웹 프레임워크**: Spring Boot (WebFlux / MVC)
 - **라이선스**: Apache License 2.0
 - **패키지**: `org.apache.pekko.*` (Akka의 `akka.*`에 대응)
+
+## 마이그레이션 메모 (1.1.x -> 1.4.x)
+
+- 코어 액터 코드는 대부분 그대로 유지되며, 실무에서 변화 효과가 큰 지점은 **클러스터 조인 전략**입니다.
+- Kubernetes 배포형 프로젝트는 `seed-nodes` 고정보다 `kubernetes-api` discovery + bootstrap 조합을 권장합니다.
+- 관련 설정/인프라 템플릿은 `kotlin-pekko-typed-infra` 스킬을 함께 사용합니다.
 
 ## 핵심 특성
 

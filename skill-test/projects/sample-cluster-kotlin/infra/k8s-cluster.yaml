@@ -1,4 +1,30 @@
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pekko-cluster-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pekko-cluster-pod-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pekko-cluster-pod-reader-binding
+subjects:
+  - kind: ServiceAccount
+    name: pekko-cluster-sa
+roleRef:
+  kind: Role
+  name: pekko-cluster-pod-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: pekko-cluster
@@ -12,6 +38,9 @@ spec:
     - name: remoting
       port: 25520
       targetPort: 25520
+    - name: management
+      port: 8558
+      targetPort: 8558
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -29,6 +58,7 @@ spec:
       labels:
         app: pekko-cluster
     spec:
+      serviceAccountName: pekko-cluster-sa
       containers:
         - name: pekko-node
           image: sample-cluster-kotlin:latest
@@ -36,6 +66,8 @@ spec:
           ports:
             - containerPort: 25520
               name: remoting
+            - containerPort: 8558
+              name: management
           env:
             - name: POD_NAME
               valueFrom:
@@ -45,10 +77,20 @@ spec:
               value: "$(POD_NAME).pekko-cluster.default.svc.cluster.local"
             - name: CLUSTER_PORT
               value: "25520"
-            - name: CLUSTER_SEED_NODES
-              value: '["pekko://ClusterSystem@pekko-cluster-0.pekko-cluster.default.svc.cluster.local:25520"]'
+            - name: MANAGEMENT_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: MANAGEMENT_PORT
+              value: "8558"
             - name: CLUSTER_MIN_NR
               value: "2"
+            - name: CLUSTER_BOOTSTRAP_SERVICE_NAME
+              value: "pekko-cluster"
+            - name: CLUSTER_BOOTSTRAP_REQUIRED_CONTACT_POINTS
+              value: "2"
+            - name: CLUSTER_BOOTSTRAP_PORT_NAME
+              value: "management"
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "kafka.default.svc.cluster.local:9092"
             - name: KAFKA_TOPIC

@@ -53,3 +53,40 @@
 ## 결과 요약
 - 유닛테스트: dotnet/java/kotlin 모두 성공
 - 쿠버 통합검증: Kafka 선기동 → 프로젝트별 2노드 조인 + Kafka round-trip 성공 로그 확인 → 전체 graceful shutdown 완료
+
+---
+
+## 추가 개선: Kotlin Pekko 1.4 마이그레이션 (2026-02-17)
+
+### A. 스킬 참조 기반 적용
+
+#### 1) `kotlin-pekko-typed`
+- 코어 Typed/Cluster/Stream/TestKit 모듈을 Pekko `1.4.0`으로 상향.
+- `_2.13` 바이너리 기준에서 `scala-library:2.13.18` 해석 확인.
+
+#### 2) `kotlin-pekko-typed-cluster`
+- `ClusterSingleton`/`ClusterListener` 흐름을 유지하며 1.4 환경에서 동작 검증.
+- `MemberUp` 이벤트 기반 클러스터 준비 판정 로직 회귀 없음 확인.
+
+#### 3) `kotlin-pekko-typed-test`
+- 기존 테스트 유지 + 신규 테스트(`StopKafkaStream` graceful stop) 추가.
+- `./gradlew clean test` 기준 전체 통과.
+
+#### 4) `kotlin-pekko-typed-infra`
+- Kubernetes API Discovery + Cluster Bootstrap 방식으로 전환.
+- `ServiceAccount/Role/RoleBinding` 반영.
+- `management` 포트 및 `contact-point-discovery.port-name` 명시.
+
+### B. 스킬 외 추가 적용
+- Bootstrap self contact-point/lowest-address 비교 실패 이슈 대응:
+  - `MANAGEMENT_HOSTNAME`을 Pod DNS가 아닌 Pod IP(`status.podIP`)로 주입해 self-join 판정 안정화.
+- 배포 과정에서 발생한 일시적 DNS/프로빙 실패를 재시도 롤아웃으로 수습하고 최종 조인/기능 성공 로그 확보.
+
+### C. 검증 결과
+- 클러스터:
+  - `Member is Up` 2건 확인
+  - `Cluster is ready (2/2 members Up)` 확인
+- 기능:
+  - `Kafka stream round-trip succeeded` 확인
+- 종료:
+  - Kubernetes 리소스 graceful 삭제 후 잔여 리소스 없음 확인

@@ -75,3 +75,36 @@
 - Kafka 이미지는 `bitnami/kafka:3.7` 태그 미존재로 pull 실패하여 `apache/kafka:3.7.1`로 전환
 - Dotnet 실행 중 발견된 Kafka 설정 이슈(`akka.kafka` config/dispatcher) 보완 후 round-trip 성공 확인
 - Kotlin은 완료 로그 가시성을 위해 `pipeToSelf` 완료/실패 메시지 처리 추가
+
+---
+
+## 추가 검증: Kotlin Pekko 1.4 마이그레이션
+실행일시: **2026-02-17 (KST)**
+
+### 1) 유닛테스트
+- 대상: `skill-test/projects/sample-cluster-kotlin`
+- 실행: `./gradlew clean test`
+- 결과: **성공**
+- 포함 검증:
+  - 기존 테스트 유지 통과
+  - 신규 테스트 `kafka singleton should stop gracefully on stop message` 통과
+- 추가 실행: `./gradlew test --tests "cluster.kotlin.TwoNodeClusterTest"` → **성공** (2-Node 시나리오 회귀 확인)
+
+### 2) Kubernetes 클러스터 조인/기능 검증
+- Kafka 상태 확인 후 미가동 상태에서 재기동:
+  - `kubectl apply -f skill-test/infra/k8s-kafka-standalone.yaml`
+  - `kubectl rollout status statefulset/kafka`
+- Kotlin 클러스터 배포:
+  - `kubectl apply -f skill-test/projects/sample-cluster-kotlin/infra/k8s-cluster.yaml`
+  - `kubectl rollout status statefulset/pekko-cluster`
+- 로그 검증 결과:
+  - `ClusterBootstrap` 시작 및 `kubernetes-api` discovery 확인
+  - `Member is Up` 2건 확인
+  - `Cluster is ready (2/2 members Up)` 확인
+  - `Starting Kafka stream round-trip once...` 확인
+  - `Kafka stream round-trip succeeded...` 확인
+
+### 3) 그레이스풀 셧다운
+- `kubectl delete -f skill-test/projects/sample-cluster-kotlin/infra/k8s-cluster.yaml`
+- `kubectl delete -f skill-test/infra/k8s-kafka-standalone.yaml`
+- 결과: default 네임스페이스 잔여 Pod/StatefulSet 없음 확인

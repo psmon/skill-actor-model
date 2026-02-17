@@ -18,14 +18,54 @@ Kotlin + Apache Pekko Typed 기반 분산 클러스터의 인프라(서비스 �
 
 | 컴포넌트 | 버전 | 비고 |
 |---------|------|------|
-| Apache Pekko | 1.1.3 ~ 1.1.5 | 기본 스킬 기준 1.1.3 |
-| Pekko Management | 1.2.0 | **Pekko 1.1.5+ 필요** |
+| Apache Pekko | 1.4.x | 기본 스킬 기준 1.4.0 |
+| Pekko Management | 1.2.0 | Pekko 1.4.x와 호환 |
 | Pekko Discovery Kubernetes API | 1.2.0 | Management와 동일 버전 |
 | Scala Binary | 2.13 | `_2.13` suffix |
 | JDK | 11, 17, 21 | |
 | Kotlin | 1.9.x | |
 
-> **버전 주의**: `pekko-management` 1.2.0은 Pekko 1.1.5 이상을 요구합니다. 기존 스킬이 1.1.3을 사용하는 경우 `pekkoVersion`을 1.1.5로 올려야 합니다. 1.1.x 마이너 간 호환성이 유지됩니다.
+> **버전 주의**: Pekko 코어/클러스터/스트림/테스트 모듈은 동일 `pekkoVersion`(예: 1.4.0)으로 맞추고, Management/Bootstrap/Kubernetes Discovery는 `1.2.0` 계열로 고정하는 구성을 권장합니다.
+
+## 1.1 -> 1.4 마이그레이션 권장사항 (중요)
+
+실전 마이그레이션(`sample-cluster-kotlin`) 기준으로, Kubernetes 환경에서는 **고정 seed-nodes보다 Kubernetes API Discovery + Cluster Bootstrap 채택이 운영 안정성에 큰 도움**이 됩니다.
+
+### 왜 도움이 되는가
+
+1. Pod 재스케줄/재생성 시 주소 변경을 자동 흡수합니다.
+2. 수동 seed-nodes 관리 부담을 줄여 운영 실수를 감소시킵니다.
+3. 멤버십 형성 과정을 bootstrap 로그로 추적하기 쉬워 장애 분석이 빨라집니다.
+
+### 적용 체크리스트
+
+1. 의존성
+- `pekko-management`
+- `pekko-management-cluster-bootstrap`
+- `pekko-discovery-kubernetes-api`
+
+2. HOCON
+- `pekko.discovery.method = kubernetes-api`
+- `pekko.management.cluster.bootstrap.contact-point-discovery.discovery-method = kubernetes-api`
+- `pekko.management.cluster.bootstrap.contact-point-discovery.port-name = "management"`
+
+3. 런타임 초기화
+- `PekkoManagement.get(system).start()`
+- `ClusterBootstrap.get(system).start()`
+
+4. Kubernetes 리소스
+- RBAC(Pod `get/watch/list`) 필수
+- Service/Pod에 management 포트(예: `8558`) 노출
+- `required-contact-point-nr`는 최소 2 이상 권장
+
+### 운영 트러블슈팅 포인트
+
+1. 로그에 `Contact Point returning 0 seed-nodes`가 반복되면:
+- discovery 포트 해석(`port-name`)과 management 포트 노출을 먼저 점검합니다.
+
+2. `LowestAddressJoinDecider`가 self-join을 계속 미루면:
+- self contact-point가 실제 reachable 주소인지 확인합니다.
+- 필요 시 `MANAGEMENT_HOSTNAME`을 Pod IP(`status.podIP`)로 주입해 비교 안정성을 높입니다.
 
 ## 디스커버리 방법 개요
 
@@ -47,7 +87,7 @@ Kubernetes 종속 없이 Docker Compose 환경에서 클러스터를 구성하�
 ### Gradle 의존성 (Kotlin DSL)
 
 ```kotlin
-val pekkoVersion = "1.1.5"
+val pekkoVersion = "1.4.0"
 val pekkoManagementVersion = "1.2.0"
 val scalaBinaryVersion = "2.13"
 
@@ -548,7 +588,7 @@ spec:
 | coordinated-shutdown | `exit-jvm = on`으로 JVM 안전 종료 보장 |
 | Docker Compose DNS 제약 | SRV 레코드 미지원. Config Discovery 권장 |
 | Kubernetes publishNotReadyAddresses | `true`로 설정하여 readiness 교착상태 방지 |
-| Management 버전 호환 | `pekko-management` 1.2.0은 Pekko 1.1.5+ 필요 |
+| Management 버전 호환 | `pekko-management` 1.2.0은 Pekko 1.4.x와 호환 |
 
 ## 코드 생성 규칙
 

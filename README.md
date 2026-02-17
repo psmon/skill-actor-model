@@ -9,13 +9,13 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 | 스킬 | 명령어 | 플랫폼 |
 |------|--------|--------|
 | Java Akka Classic | `/java-akka-classic` | Java + Akka Classic 2.7.x |
-| Kotlin Pekko Typed | `/kotlin-pekko-typed` | Kotlin + Pekko Typed 1.1.x |
+| Kotlin Pekko Typed | `/kotlin-pekko-typed` | Kotlin + Pekko Typed 1.4.x |
 | C# Akka.NET | `/dotnet-akka-net` | C# + Akka.NET 1.5.x |
 | Java Akka Classic Test | `/java-akka-classic-test` | Java + Akka Classic TestKit |
 | Kotlin Pekko Typed Test | `/kotlin-pekko-typed-test` | Kotlin + Pekko Typed ActorTestKit |
 | C# Akka.NET Test | `/dotnet-akka-net-test` | C# + Akka.TestKit.Xunit2 |
 | Java Akka Classic Cluster | `/java-akka-classic-cluster` | Java + Akka Classic Cluster 2.7.x |
-| Kotlin Pekko Typed Cluster | `/kotlin-pekko-typed-cluster` | Kotlin + Pekko Typed Cluster 1.1.x |
+| Kotlin Pekko Typed Cluster | `/kotlin-pekko-typed-cluster` | Kotlin + Pekko Typed Cluster 1.4.x |
 | C# Akka.NET Cluster | `/dotnet-akka-net-cluster` | C# + Akka.NET Cluster 1.5.x |
 | Java Akka Classic Infra | `/java-akka-classic-infra` | Java + Akka Classic + Docker/K8s |
 | Kotlin Pekko Typed Infra | `/kotlin-pekko-typed-infra` | Kotlin + Pekko Typed + Docker/K8s |
@@ -35,7 +35,7 @@ Claude Code 스킬 기반으로 **액터 모델(Actor Model)을 다양한 언어
 |-------|--------|----------|
 | 2.5.x | -      | 1.5.x    |
 | 2.6.x | 1.0.x~ | -        |
-| 2.7.x | 1.3.x~ | -        |
+| 2.7.x | 1.4.x~ | -        |
 
 #### TypedActor의 특징
 - Typed Actor는 2.6에 출시 Pekko-Kotlin 버전으로 다루는중 - 이벤트 발신/수신자 약손된 Type이 안맞는경우 컴파일타임에 오류를냄, 클래식에 익숙하다고 하면 Typed준수하느라 약간의 스트레스 알고보니 Behavior패턴의 일종으로 이 패턴에 익숙해야 강력해짐

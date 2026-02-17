@@ -126,4 +126,21 @@ class ClusterActorTest {
             "done"
         }
     }
+
+    @Test
+    fun `kafka singleton should stop gracefully on stop message`() {
+        val singleton = testKit.spawn(
+            KafkaStreamSingletonActor.create(
+                "localhost:9092",
+                "cluster-kotlin-events",
+                "test-group",
+                Duration.ofSeconds(3)
+            ),
+            "kafka-singleton-stop-test"
+        )
+
+        val watcher = testKit.createTestProbe<Any>()
+        singleton.tell(StopKafkaStream)
+        watcher.expectTerminated(singleton, Duration.ofSeconds(3))
+    }
 }

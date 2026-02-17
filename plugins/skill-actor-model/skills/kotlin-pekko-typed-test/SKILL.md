@@ -1,16 +1,16 @@
 ---
 name: kotlin-pekko-typed-test
-description: Kotlin + Apache Pekko Typed(1.1.x) 액터 유닛테스트를 생성합니다. ActorTestKit과 TestProbe를 사용해 replyTo 기반 상호작용, 타입 안전 메시지 검증, actor stop 검증을 작성할 때 사용합니다.
+description: Kotlin + Apache Pekko Typed(1.4.x) 액터 유닛테스트를 생성합니다. ActorTestKit과 TestProbe를 사용해 replyTo 기반 상호작용, 타입 안전 메시지 검증, actor stop 검증을 작성할 때 사용합니다.
 argument-hint: "[테스트대상] [시나리오]"
 ---
 
 # Kotlin + Pekko Typed 테스트 스킬
 
-Pekko Typed 1.1.x 기반 Kotlin 프로젝트의 테스트 코드를 작성할 때 사용합니다.
+Pekko Typed 1.4.x 기반 Kotlin 프로젝트의 테스트 코드를 작성할 때 사용합니다.
 
 ## 호환 버전
 
-- Apache Pekko Typed: `1.1.x`
+- Apache Pekko Typed: `1.4.x`
 - 테스트 모듈: `pekko-actor-testkit-typed_2.13` (동일 버전 권장)
 - 테스트 프레임워크: `JUnit 5` + Kotlin 테스트
 - Kotlin: `1.9.x`
@@ -18,7 +18,7 @@ Pekko Typed 1.1.x 기반 Kotlin 프로젝트의 테스트 코드를 작성할 �
 ## 의존성 예시
 
 ```kotlin
-val pekkoVersion = "1.1.3"
+val pekkoVersion = "1.4.0"
 
 dependencies {
     implementation("org.apache.pekko:pekko-actor-typed_2.13:$pekkoVersion")
@@ -87,6 +87,12 @@ reportTo?.tell(msg.message)
 - Typed에서는 `replyTo: ActorRef<T>`를 메시지에 명시해 검증 가능성을 높입니다.
 - `Thread.sleep` 대신 `expectMessage`/`expectNoMessage`를 사용합니다.
 - 테스트마다 독립적인 ActorSystem을 사용해 상태 누수를 차단합니다.
+
+## 마이그레이션 회귀검증 (1.1.x -> 1.4.x)
+
+- 기존 테스트를 유지한 상태에서 신규 회귀 테스트를 추가하는 전략을 권장합니다.
+- 예: Singleton 중복 실행 방지 테스트 + `Stop` 메시지 기반 graceful stop 테스트를 함께 유지.
+- 클러스터형 프로젝트는 단일 노드 테스트 외에 `TwoNodeClusterTest` 같은 2노드 시나리오를 별도로 실행해 조인 회귀를 점검합니다.
 
 ## 참고 문서
 

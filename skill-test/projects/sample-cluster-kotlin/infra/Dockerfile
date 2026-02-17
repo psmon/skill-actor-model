@@ -11,5 +11,5 @@ RUN gradle installDist --no-daemon
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /app/build/install/sample-cluster-kotlin/ ./
-EXPOSE 25520
+EXPOSE 25520 8558
 ENTRYPOINT ["./bin/sample-cluster-kotlin"]
