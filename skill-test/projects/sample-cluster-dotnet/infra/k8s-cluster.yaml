@@ -73,6 +73,12 @@ spec:
               value: "cluster-dotnet-events"
             - name: KAFKA_GROUP_ID_PREFIX
               value: "cluster-dotnet-group"
+            - name: CAFE24_BUCKET_CAPACITY
+              value: "10"
+            - name: CAFE24_LEAK_RATE_PER_SECOND
+              value: "2"
+            - name: CAFE24_PER_MALL_MAX_RPS
+              value: "2"
           readinessProbe:
             httpGet:
               path: /api/heath

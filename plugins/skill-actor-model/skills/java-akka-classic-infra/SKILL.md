@@ -611,3 +611,11 @@ $ARGUMENTS
 5. seed-node, management, bootstrap 포트 정의를 서비스/컨테이너/설정 간 동일하게 유지합니다.
 6. 배포 후 `rollout status`만 보지 말고, 로그에서 `Member is Up`와 singleton 동작까지 확인합니다.
 7. Kafka 연동 검증은 API 호출 후 producer/consumer 성공 로그를 함께 수집합니다.
+
+## Cafe24 API 제한 대응 업데이트 (2026-03)
+
+- K8s 환경변수 표준 추가 권장:
+  - `CAFE24_BUCKET_CAPACITY`
+  - `CAFE24_LEAK_RATE_PER_SECOND`
+  - `CAFE24_PER_MALL_MAX_RPS`
+- 통합 검증 순서: 배포 -> 조인확인 -> `/api/cafe24/call` -> `/api/cafe24/metrics` -> graceful shutdown.

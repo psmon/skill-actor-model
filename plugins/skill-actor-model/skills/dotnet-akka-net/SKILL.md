@@ -728,3 +728,9 @@ $ARGUMENTS
 4. `/api/kafka/fire-event`는 스케줄 자동 발행 대신 API 수동 트리거를 기본으로 둡니다.
 5. Swagger 버전은 런타임 메이저와 일치시킵니다(특히 .NET).
 6. 파일 로깅은 `logback-spring.xml`/Serilog file sink로 구성하고, 콘솔 로깅과 함께 유지합니다.
+
+## Cafe24 API 제한 대응 업데이트 (2026-03)
+
+- MallId별 child actor + `Akka.Streams` throttle + adaptive retry 패턴을 권장합니다.
+- 메트릭은 클러스터 singleton으로 중앙 집계(`totalCalls`, `throttled429`, `avgQueueDelayMs`)합니다.
+- Streams + actor 조합 시, 내부 재시도/대기를 숨기고 최종 응답만 외부로 노출하는 메시지 분리를 권장합니다.

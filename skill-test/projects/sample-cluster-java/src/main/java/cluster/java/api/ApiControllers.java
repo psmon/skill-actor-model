@@ -4,10 +4,13 @@ import akka.pattern.PatternsCS;
 import cluster.java.ClusterInfoActor;
 import cluster.java.HelloActor;
 import cluster.java.KafkaStreamSingletonActor;
+import cluster.java.cafe24.Cafe24ApiManagerActor;
+import cluster.java.cafe24.Cafe24MetricsSingletonActor;
 import cluster.java.config.AkkaActorRuntime;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -56,5 +59,28 @@ public class ApiControllers {
             .thenApply(result -> result.success()
                 ? ResponseEntity.ok(result)
                 : ResponseEntity.internalServerError().body(result));
+    }
+
+    @GetMapping("/cafe24/call")
+    public CompletionStage<Cafe24ApiManagerActor.ApiResponse> cafe24Call(
+        @RequestParam String mallId,
+        @RequestParam String word
+    ) {
+        return PatternsCS.ask(
+                runtime.cafe24ApiManager(),
+                new Cafe24ApiManagerActor.ApiRequest(mallId, word),
+                Duration.ofSeconds(15))
+            .thenApply(Cafe24ApiManagerActor.ApiResponse.class::cast);
+    }
+
+    @GetMapping("/cafe24/metrics")
+    public CompletionStage<Cafe24MetricsSingletonActor.MallMetrics> cafe24Metrics(
+        @RequestParam String mallId
+    ) {
+        return PatternsCS.ask(
+                runtime.cafe24MetricsProxy(),
+                new Cafe24MetricsSingletonActor.GetMallMetrics(mallId),
+                Duration.ofSeconds(5))
+            .thenApply(Cafe24MetricsSingletonActor.MallMetrics.class::cast);
     }
 }

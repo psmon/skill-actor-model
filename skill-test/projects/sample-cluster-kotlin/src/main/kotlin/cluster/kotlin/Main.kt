@@ -16,6 +16,7 @@ import org.springframework.boot.runApplication
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.stereotype.Component
@@ -42,6 +43,9 @@ class AkkaActorRuntime(
     lateinit var helloActor: ActorRef<HelloCommand>
     lateinit var clusterInfoActor: ActorRef<ClusterInfoCommand>
     lateinit var kafkaSingletonProxy: ActorRef<KafkaSingletonCommand>
+    lateinit var cafe24MetricsProxy: ActorRef<Cafe24MetricsCommand>
+    lateinit var cafe24ApiManager: ActorRef<Cafe24ApiManagerCommand>
+    private lateinit var dummyCafe24Api: DummyCafe24Api
 
     init {
         val overrides = buildString {
@@ -66,6 +70,9 @@ class AkkaActorRuntime(
             ?: "kafka.default.svc.cluster.local:9092"
         val kafkaTopic = System.getenv("KAFKA_TOPIC") ?: "cluster-kotlin-events"
         val kafkaGroupIdPrefix = System.getenv("KAFKA_GROUP_ID_PREFIX") ?: "cluster-kotlin-group"
+        val cafe24BucketCapacity = (System.getenv("CAFE24_BUCKET_CAPACITY") ?: "10").toInt()
+        val cafe24LeakRate = (System.getenv("CAFE24_LEAK_RATE_PER_SECOND") ?: "2").toInt()
+        val cafe24MallRps = (System.getenv("CAFE24_PER_MALL_MAX_RPS") ?: "2").toInt()
 
         system = ActorSystem.create(Behaviors.empty(), "ClusterSystem", config)
 
@@ -82,6 +89,18 @@ class AkkaActorRuntime(
                 "kafkaStreamSingleton"
             ).withStopMessage(StopKafkaStream)
         )
+        cafe24MetricsProxy = ClusterSingleton.get(system).init(
+            SingletonActor.of(
+                Cafe24MetricsSingletonActor.create(),
+                "cafe24MetricsSingleton"
+            ).withStopMessage(StopCafe24Metrics)
+        )
+        dummyCafe24Api = DummyCafe24Api(cafe24BucketCapacity, cafe24LeakRate)
+        cafe24ApiManager = system.systemActorOf(
+            Cafe24ApiManagerActor.create(cafe24MallRps, dummyCafe24Api, cafe24MetricsProxy),
+            "cafe24ApiManager",
+            Props.empty()
+        )
         system.systemActorOf(ClusterListenerActor.create(system.ignoreRef()), "clusterListener", Props.empty())
 
         PekkoManagement.get(system).start()
@@ -90,6 +109,7 @@ class AkkaActorRuntime(
 
     @PreDestroy
     fun shutdown() {
+        dummyCafe24Api.close()
         system.terminate()
     }
 }
@@ -137,5 +157,30 @@ class ApiController(
 
         return if (result.success) ResponseEntity.ok(result)
         else ResponseEntity.internalServerError().body(result)
+    }
+
+    @GetMapping("/cafe24/call")
+    suspend fun cafe24Call(
+        @RequestParam mallId: String,
+        @RequestParam word: String
+    ): Cafe24ApiResponse {
+        return AskPattern.ask<Cafe24ApiManagerCommand, Cafe24ApiResponse>(
+            runtime.cafe24ApiManager,
+            { replyTo -> Cafe24ApiRequest(mallId, word, replyTo) },
+            Duration.ofSeconds(15),
+            runtime.system.scheduler()
+        ).toCompletableFuture().join()
+    }
+
+    @GetMapping("/cafe24/metrics")
+    suspend fun cafe24Metrics(
+        @RequestParam mallId: String
+    ): Cafe24MetricsResponse {
+        return AskPattern.ask<Cafe24MetricsCommand, Cafe24MetricsResponse>(
+            runtime.cafe24MetricsProxy,
+            { replyTo -> GetMallMetrics(mallId, replyTo) },
+            Duration.ofSeconds(5),
+            runtime.system.scheduler()
+        ).toCompletableFuture().join()
     }
 }

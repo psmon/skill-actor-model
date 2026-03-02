@@ -108,3 +108,10 @@ expectNoMessage(Duration.ofMillis(200));
 4. 클러스터 테스트는 최소 2노드 Up 상태를 확인한 뒤 기능 테스트를 수행합니다.
 5. 종료 테스트는 actor stop/coordinated shutdown 확인에 집중하고 Kafka 종료는 제외합니다.
 6. 런타임 버전 제약이 있을 경우(예: net10) SDK 컨테이너 기반 테스트 경로를 같이 제공합니다.
+
+## Cafe24 API 제한 대응 업데이트 (2026-03)
+
+- 테스트 시나리오 권장:
+  - `hello -> world`, MallId 분리 burst 호출, `throttled429 == 0`
+  - 메트릭 싱글턴 응답값(`totalCalls`, `avgQueueDelayMs`) 검증
+- `awaitAssert`로 burst 후 최종 메트릭 수렴을 검증합니다.

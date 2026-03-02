@@ -64,4 +64,24 @@ app.MapPost("/api/kafka/fire-event", async (ActorRuntime runtime, CancellationTo
         : Results.Problem(response.Error ?? "Kafka fire-event failed", statusCode: 500);
 });
 
+app.MapGet("/api/cafe24/call", async (string mallId, string word, ActorRuntime runtime, CancellationToken ct) =>
+{
+    var response = await runtime.Cafe24ApiManager.Ask<Cafe24ApiManagerActor.ApiResponse>(
+        new Cafe24ApiManagerActor.ApiRequest(mallId, word),
+        TimeSpan.FromSeconds(15),
+        cancellationToken: ct);
+
+    return Results.Ok(response);
+});
+
+app.MapGet("/api/cafe24/metrics", async (string mallId, ActorRuntime runtime, CancellationToken ct) =>
+{
+    var response = await runtime.Cafe24MetricsSingletonProxy.Ask<Cafe24MetricsSingletonActor.MallMetrics>(
+        new Cafe24MetricsSingletonActor.GetMallMetrics(mallId),
+        TimeSpan.FromSeconds(5),
+        cancellationToken: ct);
+
+    return Results.Ok(response);
+});
+
 app.Run();

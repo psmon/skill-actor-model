@@ -798,3 +798,12 @@ $ARGUMENTS
 3. 클러스터 멤버 조건(min members)과 readiness 조건을 동일한 기준으로 맞춥니다.
 4. seed-node 주소는 pod DNS 기준으로 고정하고, 런타임에서 hostname 우선순위를 명시합니다.
 5. 클러스터 이벤트 로그(`Member is Up`)를 API 테스트 결과와 함께 검증합니다.
+
+## Cafe24 API 제한 대응 업데이트 (2026-03)
+
+- 권장 아키텍처:
+  - 호출 제어는 분산 액터에서 처리
+  - 호출량 집계/관측은 singleton 액터에서 중앙화
+- 검증 포인트:
+  - 2노드 Up 확인 후 기능 호출
+  - `Member is Up` + `Cafe24 safe call` 로그를 함께 확인
